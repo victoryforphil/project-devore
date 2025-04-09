@@ -49,7 +49,7 @@ impl Task for TestTaskTalker{
 pub struct TestTaskListener{}
 impl Task for TestTaskListener{
     fn init(&self, tx: tasks::task::TaskChannel) -> Result<(), anyhow::Error> {
-        tx.send(subscribe!("test_pub"))?;
+        tx.send(subscribe!("test_*"))?;
         Ok(())
     }
 
