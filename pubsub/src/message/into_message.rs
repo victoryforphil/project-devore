@@ -8,6 +8,7 @@ use super::packet::{Packet, PacketType, PublishPacket};
 pub trait IntoMessage {
     fn get_schema(&self) -> Arc<Schema>;
     fn get_record_batch(&self) -> RecordBatch;
+  
 }
 
 
@@ -31,9 +32,9 @@ pub trait IntoMessage {
 #[macro_export]
 macro_rules! publish {
     ($topic:expr, $msg:expr) => {
-        Packet {
+        crate::message::packet::Packet {
             topic: $topic.into(),
-            msg: PacketType::Publish(PublishPacket {
+            msg: crate::message::packet::PacketType::Publish(crate::message::packet::PublishPacket {
                 record: $crate::msg!($topic, $msg).build(),
             }),
         }

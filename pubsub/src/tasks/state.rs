@@ -4,7 +4,7 @@ use arrow::array::RecordBatch;
 use std::sync::Arc;
 use arrow::datatypes::Schema;
 use arrow::compute::concat_batches;
-use crate::message::packet::{Packet, PacketType};
+use crate::message::packet::{Packet, PacketType, PublishPacket};
 
 pub struct RunnerState {
     topic_data: HashMap<String, RecordBatch>,
@@ -17,23 +17,57 @@ impl RunnerState {
         }
     }
     
-    pub fn apply_packet(&mut self, packet: Packet) -> Result<(), anyhow::Error> {
-        match packet.msg {
-            PacketType::Publish(publish_packet) => {
-                self.append_record_batch(packet.topic, publish_packet.record)?;
-            },
-            _ => {
-                return Err(anyhow::anyhow!("Invalid packet type. Can only apply publish packets to the state."));
-            }
-        }
+    pub fn apply_packet(&mut self, packet: &PublishPacket) -> Result<(), anyhow::Error> {
+        let rb = &packet.record;
+        let topic = rb.schema_ref().metadata().get("topic").unwrap().to_string();
+        self.append_record_batch(topic, rb)?;
         Ok(())
     }
+
+    pub fn get_topics(&self) -> Vec<String> {
+        self.topic_data.keys().cloned().collect()
+    }
+    // Get all topic keys matching the input query.
+    // Supports path (parent/child) and wildcard (*).
+    pub fn query_topics(&self, query: &str) -> Result<Vec<String>, anyhow::Error> {
+        let mut topics = Vec::new();
+        for topic_key in self.topic_data.keys() {
+            if topic_key.starts_with(query) {
+                topics.push(topic_key.to_string());
+            }
+            else if query.contains("*") {
+                // Handle wildcard matching
+                let pattern = query.replace("*", ".*");
+                if let Ok(regex) = regex::Regex::new(&pattern) {
+                    if regex.is_match(topic_key) {
+                        topics.push(topic_key.to_string());
+                    }
+                }
+            }
+            else if query.contains("/") && topic_key.contains(query) {
+                // Handle path matching
+                topics.push(topic_key.to_string());
+            }
+        }
+        Ok(topics)
+    }
+    
 
     pub fn get_latest_topic_data(&self, topic: &str) -> Result<RecordBatch, anyhow::Error> {
         let record_batch = self.topic_data.get(topic).ok_or(anyhow::anyhow!("Topic not found"))?;
         // Get the last row
         let last_row = record_batch.slice(record_batch.num_rows() - 1, 1);
         Ok(last_row)
+    }
+
+    pub fn query_latest_topic_data(&self, query: &str) -> Result<Vec<RecordBatch>, anyhow::Error> {  
+        let topics = self.query_topics(query)?;
+        let mut record_batches = Vec::new();
+        for topic in topics {
+            let record_batch = self.get_latest_topic_data(&topic)?;
+            record_batches.push(record_batch);
+        }
+        Ok(record_batches)
     }
 
     pub fn get_n_latest_topic_data(&self, topic: &str, n: usize) -> Result<RecordBatch, anyhow::Error> {
@@ -43,19 +77,19 @@ impl RunnerState {
         Ok(last_n_rows)
     }
     
-    fn append_record_batch(&mut self, topic: String, record_batch: RecordBatch) -> Result<(), anyhow::Error> {
+    fn append_record_batch(&mut self, topic: String, record_batch: &RecordBatch) -> Result<(), anyhow::Error> {
         let entry = self.topic_data.entry(topic);
         
         match entry {
             std::collections::hash_map::Entry::Vacant(e) => {
                 // If no existing record batch, just insert the new one
-                e.insert(record_batch);
+                e.insert(record_batch.clone());
             },
             std::collections::hash_map::Entry::Occupied(mut e) => {
                 // If there's an existing record batch, concatenate them
                 let current_batch = e.get();
                 let schema = Arc::new(current_batch.schema().clone());
-                let combined_batch = concat_batches(&schema, &[current_batch.clone(), record_batch])?;
+                let combined_batch = concat_batches(&schema, &[current_batch.clone(), record_batch.clone()])?;
                 e.insert(combined_batch);
             }
         }
@@ -80,6 +114,7 @@ mod tests {
         value: i32,
     }
     impl IntoMessage for TestMessage {
+     
         fn get_schema(&self) -> Arc<Schema> {
             Arc::new(Schema::new(vec![Field::new("value", DataType::Int32, false)]) )
         }
@@ -88,6 +123,7 @@ mod tests {
             let value_array = Arc::new(Int32Array::from(vec![self.value]));
             RecordBatch::try_new(self.get_schema(), vec![value_array]).unwrap()
         }
+        
     }
 
     #[test]

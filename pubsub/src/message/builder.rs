@@ -16,6 +16,7 @@ pub struct MockMessage{
     pub value: i32,
 }
 impl IntoMessage for MockMessage {
+  
     fn get_schema(&self) -> Arc<Schema> {
         Arc::new(Schema::new(vec![Field::new("value", DataType::Int32, false)]))
     }
