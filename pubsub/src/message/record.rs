@@ -134,6 +134,14 @@ impl Record {
             .map(|s| s.to_string())
             .ok_or(RecordError::TopicMetadataNotSet)
     }
+    pub fn try_get_topic_str(&self) -> Result<String, RecordError> {
+        self.record_batch
+            .schema()
+            .metadata()
+            .get("topic")
+            .map(|s| s.to_string())
+            .ok_or(RecordError::TopicMetadataNotSet)
+    }
 
     pub fn set_flag(&mut self, flag: RecordFlag) -> Result<(), anyhow::Error> {
         let mut metadata = self.record_batch.schema().metadata().clone();
