@@ -1,36 +1,16 @@
 use std::sync::{Arc, Mutex};
 
-use arrow::{array::{Int32Array, RecordBatch}, datatypes::{DataType, Field, Schema}};
-use message::{from_record::FromRecordBatch, into_message::IntoMessage};
+use arrow::{array::{Int32Array}, datatypes::{DataType, Field, Schema}};
 use tasks::{runner::Runner, task::Task};
+use serde::{Serialize, Deserialize};
 
 mod message;
 mod tasks;
 
 
-
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct TestMessage{
     pub value: i32,
-}
-
-impl IntoMessage for TestMessage {
-    fn get_schema(&self) -> Arc<Schema> {
-        Arc::new(Schema::new(vec![Field::new("value", DataType::Int32, false)]))
-    }
-
-    fn get_record_batch(&self) -> RecordBatch {
-        let schema = self.get_schema();
-        let value_array = Int32Array::from_iter_values(vec![self.value]);
-        RecordBatch::try_new(schema, vec![Arc::new(value_array)]).unwrap()
-    }
-    
-}
-
-impl FromRecordBatch<TestMessage> for TestMessage {
-    fn from_record_batch(record_batch: RecordBatch) -> Self {
-        let value = record_batch.column(0).as_any().downcast_ref::<Int32Array>().unwrap().value(0);
-        TestMessage{value: value}
-    }
 }
 
 pub struct TestTaskTalker{}
@@ -39,8 +19,9 @@ impl Task for TestTaskTalker{
         Ok(())
     }
 
-    fn run(&self, inputs: Vec<RecordBatch>, tx: tasks::task::TaskChannel) -> Result<(), anyhow::Error> {
-        let pub_packet = publish!("test_pub", &TestMessage{value: 1});
+    fn run(&self, _inputs: Vec<message::record::Record>, tx: tasks::task::TaskChannel) -> Result<(), anyhow::Error> {
+        let test_msg = TestMessage { value: 1 };
+        let pub_packet = publish!("test_pub", &test_msg);
         tx.send(pub_packet)?;
         Ok(())
     }
@@ -53,12 +34,16 @@ impl Task for TestTaskListener{
         Ok(())
     }
 
-    fn run(&self, inputs: Vec<RecordBatch>, tx: tasks::task::TaskChannel) -> Result<(), anyhow::Error> {
-        if inputs.len() == 0 {
+    fn run(&self, inputs: Vec<message::record::Record>, _tx: tasks::task::TaskChannel) -> Result<(), anyhow::Error> {
+        if inputs.is_empty() {
             return Ok(());
         }
-        let packet = TestMessage::from_record_batch(inputs[0].clone());
-        println!("Received message: {}", packet.value);
+        
+        for record in inputs {
+            let test_msg: Vec<TestMessage> = record.to_serde()?;
+            println!("Received message: {}", test_msg[0].value);
+        }
+        
         Ok(())
     }
 }

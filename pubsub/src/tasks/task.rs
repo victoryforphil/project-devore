@@ -1,10 +1,8 @@
 use std::sync::mpsc;
 
-use arrow::array::RecordBatch;
+use crate::message::record::Record;
 
-use crate::message::packet::{Packet, SubscribePacket};
-
-pub type TaskChannel = mpsc::Sender<Packet>;
+pub type TaskChannel = mpsc::Sender<Record>;
 
 
 pub trait Task {
@@ -14,7 +12,7 @@ pub trait Task {
         Ok(true)
     }
 
-    fn run(&self, inputs: Vec<RecordBatch>, tx: TaskChannel) -> Result<(), anyhow::Error>;
+    fn run(&self, inputs: Vec<Record>, tx: TaskChannel) -> Result<(), anyhow::Error>;
 
     fn cleanup(&self) -> Result<(), anyhow::Error> {
         Ok(())

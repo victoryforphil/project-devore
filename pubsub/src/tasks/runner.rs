@@ -3,9 +3,12 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use arrow::array::RecordBatch;
+
 use log::debug;
 use log::info;
+
+use crate::message::record::Record;
+use crate::message::record::RecordFlag;
 
 use super::state::RunnerState;
 use super::task::Task;
@@ -49,17 +52,18 @@ impl Runner {
             let tx = mpsc::channel();
             task.init(tx.0)?;
            
-           while let Ok(msg) = tx.1.recv() {
-            match &msg.msg {
-                crate::message::packet::PacketType::Subscribe(subscribe_packet) => {
+           while let Ok(record_msg) = tx.1.recv() {
+            let record_type= record_msg.get_flag()?;
+            match record_type {
+                RecordFlag::SubscribePacket => {
                     let task_id = *task_id;
-                    let topic = subscribe_packet.topic.clone();
+                    let topic = record_msg.try_get_topic()?;
                     new_subscriptions.push((task_id, topic));
                 }
-                crate::message::packet::PacketType::Publish(publish_packet) => {
-                    self.state.lock().unwrap().apply_packet(publish_packet)?;
+                RecordFlag::PublishPacket => {
+                    self.state.lock().unwrap().apply_record(&record_msg)?;
                 }
-                _ => {}
+               
             }   
            }
         }
@@ -78,7 +82,7 @@ impl Runner {
                 continue;
             }
 
-            let mut inputs: Vec<RecordBatch> = Vec::new();
+            let mut inputs: Vec<Record> = Vec::new();
             let subs = self.subscriptions.get(task_id).unwrap_or(&Vec::new()).clone();
             for sub in subs {
                 let state = self.state.lock().unwrap();
@@ -91,14 +95,14 @@ impl Runner {
             task.run(inputs, out_channel.0)?;
             let mut n_messages = 0;
             while let Ok(msg) = out_channel.1.recv() {
-                match &msg.msg {
-                    crate::message::packet::PacketType::Subscribe(subscribe_packet) => {
+                match &msg.get_flag()? {
+                    RecordFlag::SubscribePacket => {
                         let task_id = *task_id;
-                        let topic = subscribe_packet.topic.clone();
+                        let topic = msg.try_get_topic()?;
                         new_subscriptions.push((task_id, topic));
                     }
-                    crate::message::packet::PacketType::Publish(publish_packet) => {
-                        self.state.lock().unwrap().apply_packet(publish_packet)?;
+                    RecordFlag::PublishPacket => {
+                        self.state.lock().unwrap().apply_record(&msg)?;
                     }
                     }
                 n_messages += 1;
