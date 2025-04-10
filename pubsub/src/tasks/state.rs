@@ -22,6 +22,27 @@ impl RunnerState {
         self.logs.keys().cloned().collect()
     }
     
+    /// Get the number of rows for a specific topic, if it exists.
+    pub fn get_topic_row_count(&self, topic: &str) -> Option<usize> {
+        self.logs.get(topic).map(|record| record.to_record_batch().num_rows())
+    }
+
+    /// Get an immutable reference to the record for a specific topic, if it exists.
+    pub fn get_topic_record(&self, topic: &str) -> Option<&Record> {
+        self.logs.get(topic)
+    }
+
+    /// Replaces the record for a given topic.
+    /// If the topic doesn't exist, it will be inserted.
+    pub fn replace_topic_record(&mut self, topic: String, record: Record) {
+        self.logs.insert(topic, record);
+    }
+
+    /// Removes a topic from the state and returns the removed record, if it existed.
+    pub fn remove_topic(&mut self, topic: &str) -> Option<Record> {
+        self.logs.remove(topic)
+    }
+
     /// Get all topic keys matching the input query.
     /// Supports path (parent/child) and wildcard (*).
     pub fn query_topics(&self, query: &str) -> Result<Vec<String>, anyhow::Error> {

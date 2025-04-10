@@ -3,7 +3,6 @@ use arrow::json::reader::infer_json_schema_from_iterator;
 use arrow::json::reader::{Decoder, ReaderBuilder};
 use prettytable::{format, Cell, Row, Table};
 use serde::de::DeserializeOwned;
-use serde::Deserialize;
 use serde_json::to_value;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -114,7 +113,7 @@ impl Record {
     }
 
     pub fn set_topic(&mut self, topic: String) -> Result<(), anyhow::Error> {
-        let mut schema = self.record_batch.schema().clone();
+        let schema = self.record_batch.schema().clone();
         let mut metadata = schema.metadata().clone();
         metadata.insert("topic".to_string(), topic);
         let new_schema =
@@ -127,14 +126,6 @@ impl Record {
     }
 
     pub fn try_get_topic(&self) -> Result<String, RecordError> {
-        self.record_batch
-            .schema()
-            .metadata()
-            .get("topic")
-            .map(|s| s.to_string())
-            .ok_or(RecordError::TopicMetadataNotSet)
-    }
-    pub fn try_get_topic_str(&self) -> Result<String, RecordError> {
         self.record_batch
             .schema()
             .metadata()

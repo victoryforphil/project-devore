@@ -2,8 +2,11 @@ use std::sync::{Arc, Mutex};
 
 use arrow::{array::{Int32Array}, datatypes::{DataType, Field, Schema}};
 use message::record::RecordFlag;
-use tasks::{runner::Runner, task::Task};
+use tasks::runner::Runner;
+use tasks::task::{Task, TaskChannel, TaskInfo};
 use serde::{Serialize, Deserialize};
+
+use log::info;
 
 mod message;
 mod tasks;
@@ -18,8 +21,9 @@ pub struct TestTaskTalker{
     pub value: i32,
 }
 impl Task for TestTaskTalker{
-    fn init(&self, _tx: tasks::task::TaskChannel) -> Result<(), anyhow::Error> {
-        Ok(())
+    fn init(&self, _tx: tasks::task::TaskChannel) -> Result<TaskInfo, anyhow::Error> {
+        info!("TestTaskTalker initialized");
+        Ok(TaskInfo::new("TestTaskTalker"))
     }
 
     fn run(&self, _inputs: Vec<message::record::Record>, tx: tasks::task::TaskChannel) -> Result<(), anyhow::Error> {
@@ -32,9 +36,10 @@ impl Task for TestTaskTalker{
 
 pub struct TestTaskListener{}
 impl Task for TestTaskListener{
-    fn init(&self, tx: tasks::task::TaskChannel) -> Result<(), anyhow::Error> {
+    fn init(&self, tx: tasks::task::TaskChannel) -> Result<TaskInfo, anyhow::Error> {
+        info!("TestTaskListener initialized");
         tx.send(subscribe!("test_*"))?;
-        Ok(())
+        Ok(TaskInfo::new("TestTaskListener"))
     }
 
     fn run(&self, inputs: Vec<message::record::Record>, _tx: tasks::task::TaskChannel) -> Result<(), anyhow::Error> {

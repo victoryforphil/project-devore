@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -10,13 +12,15 @@ use log::info;
 use crate::message::record::Record;
 use crate::message::record::RecordFlag;
 
+use super::logging::OutputFormat;
 use super::state::RunnerState;
 use super::task::Task;
-
+use super::logging::RunnerLogger;
 pub struct Runner {
     tasks: HashMap<u32, Arc<Mutex<dyn Task>>>,
     state: Arc<Mutex<RunnerState>>,
     subscriptions: HashMap<u32, Vec<String>>,
+    logger: Arc<Mutex<RunnerLogger>>,
 }
 
 impl Runner {
@@ -25,6 +29,13 @@ impl Runner {
             tasks: HashMap::new(),
             state: Arc::new(Mutex::new(RunnerState::new())),
             subscriptions: HashMap::new(),
+            logger: Arc::new(Mutex::new(RunnerLogger::new(
+                PathBuf::from("logs"),
+                100,
+                10,
+                [OutputFormat::Parquet, OutputFormat::Csv].into(),
+                None,
+            ).unwrap())),
         }
     }
 
@@ -114,8 +125,9 @@ impl Runner {
             self.add_subscription(task_id, topic);
         }
        
-        // Sleep for 100ms
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        self.logger.lock().unwrap().process_state(&mut self.state.lock().unwrap())?;
+        // Sleep for 10ms 
+        std::thread::sleep(std::time::Duration::from_millis(10));
         Ok(())
     }
 }
