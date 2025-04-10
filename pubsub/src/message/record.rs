@@ -1,4 +1,5 @@
-use arrow::array::RecordBatch;
+use arrow::array::{ArrayRef, RecordBatch, StructArray};
+use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use arrow::json::reader::infer_json_schema_from_iterator;
 use arrow::json::reader::{Decoder, ReaderBuilder};
 use prettytable::{format, Cell, Row, Table};
@@ -6,6 +7,72 @@ use serde::de::DeserializeOwned;
 use serde_json::to_value;
 use std::str::FromStr;
 use std::sync::Arc;
+
+fn flatten_struct_column(
+    prefix: &str,
+    struct_array: &StructArray,
+) -> Result<Vec<(Field, ArrayRef)>, anyhow::Error> {
+    let mut flattened_columns = Vec::new();
+    for (i, field) in struct_array.fields().iter().enumerate() {
+        let col_name = if prefix.is_empty() {
+            field.name().clone()
+        } else {
+            format!("{}.{}", prefix, field.name())
+        };
+        let column = struct_array.column(i);
+
+        match field.data_type() {
+            DataType::Struct(_) => {
+                let sub_struct_array = column
+                    .as_any()
+                    .downcast_ref::<StructArray>()
+                    .ok_or_else(|| anyhow::anyhow!("Failed to downcast to StructArray"))?;
+                let sub_flattened = flatten_struct_column(&col_name, sub_struct_array)?;
+                flattened_columns.extend(sub_flattened);
+            }
+            _ => {
+                let new_field = Field::new(&col_name, field.data_type().clone(), field.is_nullable());
+                flattened_columns.push((new_field, column.clone()));
+            }
+        }
+    }
+    Ok(flattened_columns)
+}
+
+/// Flattens a RecordBatch, expanding struct columns into separate columns.
+pub fn flatten_record_batch(batch: &RecordBatch) -> Result<RecordBatch, anyhow::Error> {
+    let mut flattened_fields = Vec::new();
+    let mut flattened_columns = Vec::new();
+
+    for (i, field) in batch.schema().fields().iter().enumerate() {
+        let column = batch.column(i);
+        match field.data_type() {
+            DataType::Struct(_) => {
+                let struct_array = column
+                    .as_any()
+                    .downcast_ref::<StructArray>()
+                    .ok_or_else(|| anyhow::anyhow!("Failed to downcast to StructArray"))?;
+                let struct_flattened = flatten_struct_column(field.name(), struct_array)?;
+                for (f, c) in struct_flattened {
+                    flattened_fields.push(Arc::new(f));
+                    flattened_columns.push(c);
+                }
+            }
+            _ => {
+                flattened_fields.push(field.clone());
+                flattened_columns.push(column.clone());
+            }
+        }
+    }
+
+    let flattened_schema = Arc::new(Schema::new_with_metadata(
+        flattened_fields,
+        batch.schema().metadata().clone(),
+    ));
+    RecordBatch::try_new(flattened_schema, flattened_columns)
+        .map_err(|e| anyhow::anyhow!("Failed to create flattened RecordBatch: {}", e))
+}
+
 #[derive(Clone, PartialEq)]
 pub struct Record {
     record_batch: RecordBatch,
@@ -101,6 +168,11 @@ impl Record {
 
     pub fn to_record_batch(&self) -> &RecordBatch {
         &self.record_batch
+    }
+
+    /// Flattens the internal RecordBatch, expanding struct columns.
+    pub fn to_flattened_record_batch(&self) -> Result<RecordBatch, anyhow::Error> {
+        flatten_record_batch(&self.record_batch)
     }
 
     pub fn concat(&self, other: &Self) -> Result<Self, anyhow::Error> {
@@ -199,6 +271,8 @@ impl std::fmt::Debug for Record {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arrow::array::{Float64Array, Int32Array, ListArray, StringArray};
+    use arrow::datatypes::{DataType, Field, Fields, Schema, SchemaRef};
     use serde::{Deserialize, Serialize};
 
     #[derive(Serialize, Deserialize, Debug, Default)]
@@ -257,4 +331,120 @@ mod tests {
         record.set_flag(RecordFlag::PublishPacket).unwrap();
         assert_eq!(record.get_flag().unwrap(), RecordFlag::PublishPacket);
     }
+
+    #[test]
+    fn test_flatten_record_batch_simple() {
+        let _ = pretty_env_logger::try_init();
+        #[derive(Serialize, Deserialize, Debug, Default, Clone)]
+        struct Inner {
+            a: i32,
+            b: String,
+        }
+        #[derive(Serialize, Deserialize, Debug, Default, Clone)]
+        struct Outer {
+            id: i32,
+            inner: Inner,
+            value: f64,
+        }
+
+        let data = vec![
+            Outer { id: 1, inner: Inner { a: 10, b: "hello".to_string() }, value: 1.1 },
+            Outer { id: 2, inner: Inner { a: 20, b: "world".to_string() }, value: 2.2 },
+        ];
+
+        let record = Record::from_serde(&data).expect("Failed to create record from serde");
+        let flattened_batch = flatten_record_batch(record.to_record_batch()).expect("Flattening failed");
+
+        assert_eq!(flattened_batch.num_columns(), 4);
+        assert_eq!(flattened_batch.num_rows(), 2);
+
+        let schema = flattened_batch.schema();
+        let field_names: Vec<&str> = schema.fields().iter().map(|f| f.name().as_str()).collect();
+        assert_eq!(field_names, vec!["id", "inner.a", "inner.b", "value"]);
+
+        // Check data types
+        assert_eq!(schema.field_with_name("id").unwrap().data_type(), &DataType::Int64); // Note: Serde JSON infers Int64
+        assert_eq!(schema.field_with_name("inner.a").unwrap().data_type(), &DataType::Int64);
+        assert_eq!(schema.field_with_name("inner.b").unwrap().data_type(), &DataType::Utf8);
+        assert_eq!(schema.field_with_name("value").unwrap().data_type(), &DataType::Float64);
+
+        // Check some values
+        let id_col = flattened_batch.column(0).as_any().downcast_ref::<arrow::array::Int64Array>().unwrap();
+        assert_eq!(id_col.value(0), 1);
+        assert_eq!(id_col.value(1), 2);
+
+        let inner_a_col = flattened_batch.column(1).as_any().downcast_ref::<arrow::array::Int64Array>().unwrap();
+         assert_eq!(inner_a_col.value(0), 10);
+         assert_eq!(inner_a_col.value(1), 20);
+
+        let inner_b_col = flattened_batch.column(2).as_any().downcast_ref::<StringArray>().unwrap();
+        assert_eq!(inner_b_col.value(0), "hello");
+        assert_eq!(inner_b_col.value(1), "world");
+
+        let value_col = flattened_batch.column(3).as_any().downcast_ref::<Float64Array>().unwrap();
+         assert_eq!(value_col.value(0), 1.1);
+         assert_eq!(value_col.value(1), 2.2);
+    }
+
+     #[test]
+    fn test_flatten_record_batch_nested() {
+         #[derive(Serialize, Deserialize, Debug, Default, Clone)]
+        struct DeepInner {
+            x: f64,
+        }
+        #[derive(Serialize, Deserialize, Debug, Default, Clone)]
+        struct Inner {
+            a: i32,
+            deep: DeepInner,
+        }
+       #[derive(Serialize, Deserialize, Debug, Default, Clone)]
+        struct Outer {
+            id: i32,
+            inner: Inner,
+        }
+
+        let data = vec![
+             Outer { id: 1, inner: Inner { a: 10, deep: DeepInner { x: 100.1 } } },
+             Outer { id: 2, inner: Inner { a: 20, deep: DeepInner { x: 200.2 } } },
+         ];
+
+        let record = Record::from_serde(&data).expect("Failed to create record from serde");
+        let flattened_batch = flatten_record_batch(record.to_record_batch()).expect("Flattening failed");
+
+         assert_eq!(flattened_batch.num_columns(), 3);
+        assert_eq!(flattened_batch.num_rows(), 2);
+
+        let schema = flattened_batch.schema();
+        let field_names: Vec<&str> = schema.fields().iter().map(|f| f.name().as_str()).collect();
+        assert_eq!(field_names, vec!["id", "inner.a", "inner.deep.x"]);
+
+        // Check data types
+         assert_eq!(schema.field_with_name("id").unwrap().data_type(), &DataType::Int64);
+        assert_eq!(schema.field_with_name("inner.a").unwrap().data_type(), &DataType::Int64);
+         assert_eq!(schema.field_with_name("inner.deep.x").unwrap().data_type(), &DataType::Float64);
+     }
+
+     #[test]
+     fn test_flatten_record_batch_no_structs() {
+         let schema = Arc::new(Schema::new(vec![
+             Field::new("a", DataType::Int32, false),
+             Field::new("b", DataType::Utf8, true),
+         ]));
+         let batch = RecordBatch::try_new(
+             schema.clone(),
+             vec![
+                 Arc::new(Int32Array::from(vec![1, 2])),
+                 Arc::new(StringArray::from(vec![Some("x"), None])),
+             ],
+         )
+         .unwrap();
+
+         let flattened_batch = flatten_record_batch(&batch).expect("Flattening failed");
+
+         assert_eq!(flattened_batch.schema(), batch.schema()); // Schema should be identical
+         assert_eq!(flattened_batch.num_columns(), 2);
+         assert_eq!(flattened_batch.num_rows(), 2);
+     }
+
+    // Add more tests for edge cases like empty structs, lists of structs (should remain lists), etc.
 }

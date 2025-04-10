@@ -11,6 +11,7 @@ use parquet::arrow::arrow_writer::ArrowWriter;
 use parquet::file::properties::WriterProperties;
 
 use crate::message::record::Record;
+use crate::message::record::flatten_record_batch;
 use crate::tasks::state::RunnerState;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -136,9 +137,24 @@ impl RunnerLogger {
                         OutputFormat::Csv => {
                             let file_path = topic_dir.join(format!("{}.csv", file_stem));
                             log::debug!("Writing CSV to: {:?}", file_path);
-                            match Self::write_csv(record_batch_to_write, &file_path) {
-                                Ok(_) => files_written.push(file_path.display().to_string()),
-                                Err(e) => log::error!("Failed to write CSV for topic '{}' to {:?}: {}", topic, file_path, e),
+                            // Flatten the batch specifically for CSV writing
+                            match flatten_record_batch(record_batch_to_write) {
+                                Ok(flattened_batch) => {
+                                    match Self::write_csv(&flattened_batch, &file_path) {
+                                        Ok(_) => files_written.push(file_path.display().to_string()),
+                                        Err(e) => log::error!(
+                                            "Failed to write flattened CSV for topic '{}' to {:?}: {}",
+                                            topic,
+                                            file_path,
+                                            e
+                                        ),
+                                    }
+                                }
+                                Err(e) => log::error!(
+                                    "Failed to flatten record batch for CSV writing for topic '{}': {}",
+                                    topic,
+                                    e
+                                ),
                             }
                         }
                     }
