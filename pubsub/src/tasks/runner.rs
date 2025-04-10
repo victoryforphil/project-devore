@@ -127,7 +127,17 @@ impl Runner {
        
         self.logger.lock().unwrap().process_state(&mut self.state.lock().unwrap())?;
         // Sleep for 10ms 
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        Ok(())
+    }
+
+    pub fn cleanup(&mut self) -> Result<(), anyhow::Error> {
+        self.logger.lock().unwrap().dump_remaining_state(&mut self.state.lock().unwrap())?;
+        for (_, task) in &self.tasks {
+            let mut task = task.lock().unwrap();
+            task.cleanup()?;
+        }
+      
         Ok(())
     }
 }

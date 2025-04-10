@@ -72,6 +72,8 @@ impl RunnerLogger {
     fn write_csv(batch: &RecordBatch, path: &Path) -> Result<(), anyhow::Error> {
         let file = File::create(path)
             .with_context(|| format!("Failed to create csv file: {:?}", path))?;
+        
+        // Standard Arrow CSV writing
         let mut writer = CsvWriter::new(file);
         writer.write(batch)?;
         // Dropping writer flushes
@@ -137,24 +139,23 @@ impl RunnerLogger {
                         OutputFormat::Csv => {
                             let file_path = topic_dir.join(format!("{}.csv", file_stem));
                             log::debug!("Writing CSV to: {:?}", file_path);
-                            // Flatten the batch specifically for CSV writing
+                            
+                            // Use flatten_record_batch for CSV
                             match flatten_record_batch(record_batch_to_write) {
                                 Ok(flattened_batch) => {
                                     match Self::write_csv(&flattened_batch, &file_path) {
-                                        Ok(_) => files_written.push(file_path.display().to_string()),
-                                        Err(e) => log::error!(
-                                            "Failed to write flattened CSV for topic '{}' to {:?}: {}",
-                                            topic,
-                                            file_path,
-                                            e
-                                        ),
+                                        Ok(_) => {
+                                            files_written.push(file_path.display().to_string());
+                                            log::info!("Successfully wrote CSV file");
+                                        },
+                                        Err(e) => {
+                                            log::error!("Failed to write CSV: {}", e);
+                                        }
                                     }
+                                },
+                                Err(e) => {
+                                    log::error!("Failed to flatten record batch for CSV: {}", e);
                                 }
-                                Err(e) => log::error!(
-                                    "Failed to flatten record batch for CSV writing for topic '{}': {}",
-                                    topic,
-                                    e
-                                ),
                             }
                         }
                     }
@@ -195,6 +196,103 @@ impl RunnerLogger {
         }
         Ok(())
     }
+
+    pub fn dump_remaining_state(&self, state: &mut RunnerState) -> Result<(), anyhow::Error> {
+        let topics_to_process: Vec<String> = state
+            .get_topics()
+            .into_iter()
+            .collect();
+            
+        if self.formats.is_empty() {
+            return Ok(()); // Nothing to do if no formats are configured
+        }
+
+        log::info!("Dumping remaining state for {} topics", topics_to_process.len());
+        
+        for topic in topics_to_process {
+            if let Some(record_ref_to_write) = state.get_topic_record(&topic) {
+                let record_to_write = record_ref_to_write.clone();
+                let record_batch_to_write = record_to_write.to_record_batch();
+                
+                if record_batch_to_write.num_rows() == 0 {
+                    log::debug!("Skipping empty topic '{}'", topic);
+                    continue;
+                }
+
+                // Construct base directory and topic subdirectory path
+                let mut topic_dir = self.output_path.join(&self.session_id);
+
+                let topic_parts: Vec<&str> = topic.split('/').collect();
+                let (file_stem, dir_parts) = match topic_parts.split_last() {
+                    Some((stem, parts)) => (*stem, parts),
+                    None => (topic.as_str(), &[] as &[&str]),
+                };
+
+                for part in dir_parts {
+                    topic_dir.push(part);
+                }
+
+                fs::create_dir_all(&topic_dir).with_context(|| {
+                    format!("Failed to create topic directory structure: {:?}", topic_dir)
+                })?;
+
+                let mut files_written: Vec<String> = Vec::new();
+
+                // Write configured formats
+                for format in &self.formats {
+                    match format {
+                        OutputFormat::Parquet => {
+                            let file_path = topic_dir.join(format!("{}_final.parquet", file_stem));
+                            log::debug!("Writing final Parquet to: {:?}", file_path);
+                            match Self::write_parquet(record_batch_to_write, &file_path) {
+                                Ok(_) => files_written.push(file_path.display().to_string()),
+                                Err(e) => log::error!("Failed to write final Parquet for topic '{}' to {:?}: {}", topic, file_path, e),
+                            }
+                        }
+                        OutputFormat::Csv => {
+                            let file_path = topic_dir.join(format!("{}_final.csv", file_stem));
+                            log::debug!("Writing final CSV to: {:?}", file_path);
+                            
+                            // Use flatten_record_batch for CSV
+                            match flatten_record_batch(record_batch_to_write) {
+                                Ok(flattened_batch) => {
+                                    match Self::write_csv(&flattened_batch, &file_path) {
+                                        Ok(_) => {
+                                            files_written.push(file_path.display().to_string());
+                                            log::info!("Successfully wrote final CSV file");
+                                        },
+                                        Err(e) => {
+                                            log::error!("Failed to write final CSV: {}", e);
+                                        }
+                                    }
+                                },
+                                Err(e) => {
+                                    log::error!("Failed to flatten record batch for final CSV: {}", e);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if !files_written.is_empty() {
+                    log::info!(
+                        "Successfully wrote final {} rows for topic '{}' to: {}",
+                        record_batch_to_write.num_rows(),
+                        topic,
+                        files_written.join(", ")
+                    );
+                }
+            } else {
+                log::warn!(
+                    "Could not retrieve record reference for topic '{}' during final dump, skipping.",
+                    topic
+                );
+            }
+        }
+        
+        log::info!("Completed dumping all remaining state");
+        Ok(())
+    }
 }
 
 // Basic tests can be added here later if needed
@@ -202,5 +300,4 @@ impl RunnerLogger {
 // mod tests {
 //     use super::*;
 //     // ... test setup ...
-// }
 // }

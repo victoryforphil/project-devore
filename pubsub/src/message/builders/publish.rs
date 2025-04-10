@@ -30,10 +30,16 @@ impl PublishBuilder {
         self
     }
 
-    pub fn with_serde_content<T: Serialize>(mut self, content: &T) -> Self {
-        let record = Record::from_serde(content).unwrap();
+    pub fn with_serde_content<T: Serialize>(mut self, content: &T) -> Result<Self, anyhow::Error> {
+        let record = Record::from_serde(content)?;
         self.content = Some(record);
-        self
+        Ok(self)
+    }
+
+    pub fn with_json_content(mut self, content: &str) -> Result<Self, anyhow::Error> {
+        let record = Record::from_json(content)?;
+        self.content = Some(record);
+        Ok(self)
     }
 }
 
@@ -69,11 +75,35 @@ macro_rules! publish {
             use $crate::message::builders::RecordBuilder;
             
             let builder = PublishBuilder::new($topic.to_string())
-                .with_serde_content($content).build();
+                .with_serde_content($content).unwrap().build();
             builder
         }
     };
 }
+
+/// A macro to easily create a PublishBuilder from a topic and JSON content.
+///
+/// # Examples
+///
+/// ```
+/// let json_content = r#"{"id": 1, "name": "test"}"#;
+/// let builder = publish_json!("my_topic", json_content);
+/// let record = builder.build();
+/// ```
+#[macro_export]
+macro_rules! publish_json {
+    ($topic:expr, $json_content:expr) => {
+        {
+            use $crate::message::builders::publish::PublishBuilder;
+            use $crate::message::builders::RecordBuilder;
+            
+            let builder = PublishBuilder::new($topic.to_string())
+                .with_json_content($json_content).unwrap().build();
+            builder
+        }
+    };
+}
+
 
 /// A macro to create a PublishBuilder with additional task information.
 ///
@@ -92,7 +122,7 @@ macro_rules! publish_with_info {
             use $crate::message::builders::RecordBuilder;
             let builder = PublishBuilder::new($topic.to_string())
                 .with_task_id($task_id)
-                .with_serde_content($content).build();
+                .with_serde_content($content).unwrap().build();
             builder
         }
     };
@@ -104,7 +134,7 @@ macro_rules! publish_with_info {
             let builder = PublishBuilder::new($topic.to_string())
                 .with_task_id($task_id)
                 .with_task_name($task_name.to_string())
-                .with_serde_content($content).build();
+                .with_serde_content($content).unwrap().build();
             builder
         }
     };

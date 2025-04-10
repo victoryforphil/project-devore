@@ -97,4 +97,5 @@ fn main() {
             break;
         }
     }
+    runner.cleanup().unwrap();
 }
