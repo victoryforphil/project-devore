@@ -5,21 +5,24 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-
 use log::debug;
 use log::info;
 
 use crate::message::record::Record;
 use crate::message::record::RecordFlag;
+use crate::tasks::meta_control::MetaCommand;
 
+use super::info::TaskInfo;
 use super::logging::OutputFormat;
+use super::logging::RunnerLogger;
 use super::state::RunnerState;
 use super::task::Task;
-use super::logging::RunnerLogger;
 pub struct Runner {
-    tasks: HashMap<u32, Arc<Mutex<dyn Task>>>,
+    tasks: HashMap<TaskInfo, Arc<Mutex<dyn Task>>>,
+    spawn_tasks: HashSet<TaskInfo>,
+    running_tasks: HashSet<TaskInfo>,
     state: Arc<Mutex<RunnerState>>,
-    subscriptions: HashMap<u32, Vec<String>>,
+    subscriptions: HashMap<TaskInfo, Vec<String>>,
     logger: Arc<Mutex<RunnerLogger>>,
 }
 
@@ -27,33 +30,71 @@ impl Runner {
     pub fn new() -> Self {
         Self {
             tasks: HashMap::new(),
+            spawn_tasks: HashSet::new(),
+            running_tasks: HashSet::new(),
             state: Arc::new(Mutex::new(RunnerState::new())),
             subscriptions: HashMap::new(),
-            logger: Arc::new(Mutex::new(RunnerLogger::new(
-                PathBuf::from("logs"),
-                100,
-                10,
-                [OutputFormat::Parquet, OutputFormat::Csv].into(),
-                None,
-            ).unwrap())),
+            logger: Arc::new(Mutex::new(
+                RunnerLogger::new(
+                    PathBuf::from("logs"),
+                    100,
+                    10,
+                    [OutputFormat::Parquet, OutputFormat::Csv].into(),
+                    None,
+                )
+                .unwrap(),
+            )),
         }
     }
 
     pub fn add_task(&mut self, task: Arc<Mutex<dyn Task>>) {
-        let id: u32 = rand::random();
-        info!("Adding task with id: {}", id);
-        self.tasks.insert(id, task);
+        let task_lock = task.lock().unwrap();
+        let task_info = task_lock.get_task_info().clone();
+        drop(task_lock);
+        info!("Adding task: {}", task_info);
+        if task_info.insta_spawn {
+            info!("Task {} Insta-spawned", task_info);
+            self.spawn_tasks.insert(task_info.clone());
+        }
+     
+        self.tasks.insert(task_info.clone(), task);
     }
 
-    pub fn add_subscription(&mut self, task_id: u32, topic: String) {
+    pub fn add_subscription(&mut self, task_info: &TaskInfo, topic: String) {
         info!(
             "Adding subscription for task {} with topic {}",
-            task_id, topic
+            task_info, topic
         );
         self.subscriptions
-            .entry(task_id)
+            .entry(task_info.clone())
             .or_insert(Vec::new())
             .push(topic);
+    }
+
+    pub fn start_task(&mut self, task_info: &TaskInfo) -> Result<(), anyhow::Error> {
+        if !self.tasks.contains_key(task_info) {
+            return Err(anyhow::anyhow!("Task {} not found", task_info));
+        }
+        
+        if !self.running_tasks.contains(task_info) {
+            info!("Starting task: {}", task_info);
+            self.running_tasks.insert(task_info.clone());
+        }
+        
+        Ok(())
+    }
+
+    pub fn stop_task(&mut self, task_info: &TaskInfo) -> Result<(), anyhow::Error> {
+        if self.running_tasks.contains(task_info) {
+            info!("Stopping task: {}", task_info);
+            self.running_tasks.remove(task_info);
+        }
+        
+        Ok(())
+    }
+
+    pub fn is_task_running(&self, task_info: &TaskInfo) -> bool {
+        self.running_tasks.contains(task_info)
     }
 
     pub fn init(&mut self) -> Result<(), anyhow::Error> {
@@ -62,31 +103,43 @@ impl Runner {
             let task = task.lock().unwrap();
             let tx = mpsc::channel();
             task.init(tx.0)?;
-           
-           while let Ok(record_msg) = tx.1.recv() {
-            let record_type= record_msg.get_flag()?;
-            match record_type {
-                RecordFlag::SubscribePacket => {
-                    let task_id = *task_id;
-                    let topic = record_msg.try_get_topic()?;
-                    new_subscriptions.push((task_id, topic));
+
+            while let Ok(record_msg) = tx.1.recv() {
+                let record_type = record_msg.get_flag()?;
+                match record_type {
+                    RecordFlag::SubscribePacket => {
+                        let task_info = task_id.clone();
+                        let topic = record_msg.try_get_topic()?;
+                        new_subscriptions.push((task_info, topic));
+                    }
+                    RecordFlag::PublishPacket => {
+                        self.state.lock().unwrap().apply_record(&record_msg)?;
+                    }
                 }
-                RecordFlag::PublishPacket => {
-                    self.state.lock().unwrap().apply_record(&record_msg)?;
-                }
-               
-            }   
-           }
+            }
         }
-        for (task_id, topic) in new_subscriptions {
-            self.add_subscription(task_id, topic);
+        for (task_info, topic) in new_subscriptions {
+            self.add_subscription(&task_info, topic);
         }
         Ok(())
     }
 
     pub fn run(&mut self) -> Result<(), anyhow::Error> {
         let mut new_subscriptions = Vec::new();
+        let mut debug_inputs = Vec::new();
+        let mut debug_n_output_map = HashMap::new();
         for (task_id, task) in &self.tasks {
+            // Skip tasks that are not in the running set
+            if !self.running_tasks.contains(task_id) && !self.spawn_tasks.contains(task_id) {
+                continue;
+            }
+            
+            // If task is in spawn_tasks, move it to running_tasks
+            if self.spawn_tasks.contains(task_id) {
+                self.spawn_tasks.remove(task_id);
+                self.running_tasks.insert(task_id.clone());
+            }
+            
             let task = task.lock().unwrap();
             let should_run = task.should_run()?;
             if !should_run {
@@ -94,50 +147,87 @@ impl Runner {
             }
 
             let mut inputs: Vec<Record> = Vec::new();
-            let subs = self.subscriptions.get(task_id).unwrap_or(&Vec::new()).clone();
+            let subs = self
+                .subscriptions
+                .get(task_id)
+                .unwrap_or(&Vec::new())
+                .clone();
             for sub in subs {
                 let state = self.state.lock().unwrap();
                 let topic = state.query_latest_topic_data(&sub)?;
-                debug!("Task #{} // Inputs: {}, Query: {}", task_id, topic.len(), sub);
+                debug_inputs.push((task_id.clone(), topic.len()));
                 inputs.extend(topic);
             }
 
             let out_channel = mpsc::channel();
-            task.run(inputs, out_channel.0)?;
+            let meta_channel = mpsc::channel();
+            task.run(inputs, out_channel.0, meta_channel.0)?;
             let mut n_messages = 0;
             while let Ok(msg) = out_channel.1.recv() {
                 match &msg.get_flag()? {
                     RecordFlag::SubscribePacket => {
-                        let task_id = *task_id;
+                        let task_info = task_id.clone();
                         let topic = msg.try_get_topic()?;
-                        new_subscriptions.push((task_id, topic));
+                        new_subscriptions.push((task_info, topic));
                     }
                     RecordFlag::PublishPacket => {
                         self.state.lock().unwrap().apply_record(&msg)?;
                     }
-                    }
+                }
                 n_messages += 1;
             }
-            debug!("Task #{} // Outputs: {}", task_id, n_messages);
+            while let Ok(msg) = meta_channel.1.recv() {
+                match &msg.command {
+                    MetaCommand::SpawnTask => {
+                        info!("Spawning task: {}", msg.task_info);
+                        self.spawn_tasks.insert(msg.task_info.clone());
+                    }
+                    MetaCommand::KillTask => {
+                        info!("Killing task: {}", msg.task_info);
+                        self.running_tasks.remove(&msg.task_info);
+                    }
+                }
+            }
+
+            debug_n_output_map.insert(task_id, n_messages);
         }
-        debug!("Runner // New subscriptions: {}", new_subscriptions.len());
-        for (task_id, topic) in new_subscriptions {
-            self.add_subscription(task_id, topic);
+        let mut debug_str = String::new();
+        for (task_info, n_messages) in debug_n_output_map {
+            debug_str.push_str(&format!(
+                "Task<{}>(In: {}, Out: {}) ",
+                task_info,
+                debug_inputs
+                    .iter()
+                    .find(|(t, _)| t == task_info)
+                    .unwrap_or(&(task_info.clone(), 0))
+                    .1,
+                n_messages
+            ));
         }
-       
-        self.logger.lock().unwrap().process_state(&mut self.state.lock().unwrap())?;
-        // Sleep for 10ms 
+        debug!("{}", debug_str);
+        for (task_info, topic) in new_subscriptions {
+            self.add_subscription(&task_info, topic);
+        }
+
+        self.logger
+            .lock()
+            .unwrap()
+            .process_state(&mut self.state.lock().unwrap())?;
+        // Sleep for 10ms
         std::thread::sleep(std::time::Duration::from_millis(5));
         Ok(())
     }
 
     pub fn cleanup(&mut self) -> Result<(), anyhow::Error> {
-        self.logger.lock().unwrap().dump_remaining_state(&mut self.state.lock().unwrap())?;
+        self.logger
+            .lock()
+            .unwrap()
+            .dump_remaining_state(&mut self.state.lock().unwrap())?;
         for (_, task) in &self.tasks {
-            let mut task = task.lock().unwrap();
+            let task = task.lock().unwrap();
             task.cleanup()?;
         }
-      
+
         Ok(())
     }
 }

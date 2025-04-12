@@ -7,8 +7,8 @@ use log::{info, error};
 use rusty_docker_compose::DockerComposeCmd;
 
 use pubsub::tasks::runner::Runner;
-use pubsub::tasks::task::{Task, TaskInfo};
-
+use pubsub::tasks::task::Task;
+use pubsub::tasks::info::TaskInfo;
 use quad::ardulink::config::ArdulinkConnectionType;
 use quad::ardulink::task::MavlinkTask;
 
@@ -106,7 +106,7 @@ fn main() -> Result<()> {
         if start_time.elapsed() >= max_duration {
             break;
         }
-        std::thread::sleep(Duration::from_millis(10));
+        std::thread::sleep(Duration::from_millis(100));
     }
 
     // Clean up

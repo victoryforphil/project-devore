@@ -4,7 +4,8 @@ use log::{info, debug, error};
 use serde::{Serialize, Deserialize};
 use mavlink::ardupilotmega::MavMessage;
 
-use pubsub::tasks::task::{Task, TaskChannel, TaskInfo};
+use pubsub::tasks::task::{MetaTaskChannel, Task, TaskChannel};
+use pubsub::tasks::info::TaskInfo;
 use pubsub::message::record::Record;
 use pubsub::{publish, publish_json};
 use pubsub::subscribe;
@@ -43,6 +44,7 @@ pub struct MavlinkTask {
     connection_type: ArdulinkConnectionType,
     /// The actual connection (created during init)
     connection: Option<ArdulinkConnection>,
+    info: TaskInfo,
 }
 
 impl MavlinkTask {
@@ -51,6 +53,7 @@ impl MavlinkTask {
         Self {
             connection_type,
             connection: None,
+            info: TaskInfo::new("MavlinkTask").with_insta_spawn(),
         }
     }
     
@@ -75,7 +78,7 @@ impl MavlinkTask {
 }
 
 impl Task for MavlinkTask {
-    fn init(&self, tx: TaskChannel) -> Result<TaskInfo, Error> {
+    fn init(&self, tx: TaskChannel) -> Result<(), Error> {
         info!("MavlinkTask initializing with connection: {}", self.connection_type.connection_string());
         
         // Create the connection
@@ -93,10 +96,15 @@ impl Task for MavlinkTask {
         // Set up topic subscription for command messages
         tx.send(subscribe!("mavlink/command/#"))?;
         
-        Ok(TaskInfo::new("MavlinkTask"))
+        Ok(())
     }
     
-    fn run(&self, inputs: Vec<Record>, tx: TaskChannel) -> Result<(), Error> {
+
+    fn get_task_info(&self) -> &TaskInfo {
+        &self.info
+    }
+
+    fn run(&self, inputs: Vec<Record>, tx: TaskChannel, _: MetaTaskChannel) -> Result<(), Error> {
         // Process any commands from subscribed topics
         for record in &inputs {
             if let Ok(topic) = record.try_get_topic() {
