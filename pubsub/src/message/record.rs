@@ -1,11 +1,10 @@
 use arrow::array::{ArrayRef, RecordBatch, StructArray};
-use arrow::datatypes::{DataType, Field, Fields, Schema, SchemaRef};
+use arrow::datatypes::{DataType, Field, Fields, Schema};
 use arrow::json::reader::infer_json_schema_from_iterator;
-use arrow::json::reader::{Decoder, ReaderBuilder};
-use prettytable::{format, Cell, Row, Table};
+use arrow::json::reader::ReaderBuilder;
 use serde::de::DeserializeOwned;
 use serde_json::to_value;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -505,8 +504,8 @@ impl std::fmt::Debug for Record {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arrow::array::{Float64Array, Int32Array, ListArray, StringArray};
-    use arrow::datatypes::{DataType, Field, Fields, Schema, SchemaRef};
+    use arrow::array::{Float64Array, Int32Array, StringArray};
+    use arrow::datatypes::{DataType, Field, Fields, Schema};
     use serde::{Deserialize, Serialize};
 
     #[derive(Serialize, Deserialize, Debug, Default)]

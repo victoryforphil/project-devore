@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
 use arrow::csv::writer::Writer as CsvWriter;
@@ -10,7 +9,6 @@ use chrono::Local;
 use parquet::arrow::arrow_writer::ArrowWriter;
 use parquet::file::properties::WriterProperties;
 
-use crate::message::record::Record;
 use crate::message::record::flatten_record_batch;
 use crate::tasks::state::RunnerState;
 

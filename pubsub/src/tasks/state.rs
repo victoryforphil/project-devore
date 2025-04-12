@@ -113,14 +113,14 @@ impl RunnerState {
 
 #[cfg(test)]
 mod tests {
-    use crate::message::record::Record;
+    
     use crate::publish;
 
     use super::*;
-    use arrow::array::Int32Array;
-    use arrow::datatypes::{DataType, Field, Schema};
+    
+    
     use serde::{Deserialize, Serialize};
-    use std::sync::Arc;
+    
 
     #[derive(Serialize, Deserialize, Debug, Default)]
     struct TestMessage {
