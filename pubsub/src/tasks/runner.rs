@@ -26,6 +26,12 @@ pub struct Runner {
     logger: Arc<Mutex<RunnerLogger>>,
 }
 
+impl Default for Runner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Runner {
     pub fn new() -> Self {
         Self {
@@ -67,7 +73,7 @@ impl Runner {
         );
         self.subscriptions
             .entry(task_info.clone())
-            .or_insert(Vec::new())
+            .or_default()
             .push(topic);
     }
 
@@ -223,7 +229,7 @@ impl Runner {
             .lock()
             .unwrap()
             .dump_remaining_state(&mut self.state.lock().unwrap())?;
-        for (_, task) in &self.tasks {
+        for task in self.tasks.values() {
             let task = task.lock().unwrap();
             task.cleanup()?;
         }

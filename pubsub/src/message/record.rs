@@ -120,7 +120,7 @@ pub fn unflatten_record_batch(batch: &RecordBatch) -> Result<RecordBatch, anyhow
             
             field_groups
                 .entry(root)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push((local_name, field.clone(), flattened_data[i].clone()));
         } else {
             // This is a top-level field that stays as is
@@ -154,7 +154,7 @@ pub fn unflatten_record_batch(batch: &RecordBatch) -> Result<RecordBatch, anyhow
                 
                 field_groups
                     .entry(root)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push((local_name, field.clone(), array.clone()));
             } else {
                 // This is a direct field at this level

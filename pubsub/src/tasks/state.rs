@@ -6,6 +6,12 @@ pub struct RunnerState {
     logs: HashMap<String, Record>,
 }
 
+impl Default for RunnerState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RunnerState {
     pub fn new() -> Self {
         Self {
