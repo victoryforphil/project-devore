@@ -1,13 +1,10 @@
 use std::sync::{Arc, Mutex};
 
-use arrow::{
-    array::Int32Array,
-    datatypes::{DataType, Field, Schema},
-};
-use message::record::RecordFlag;
 use serde::{Deserialize, Serialize};
 use tasks::runner::Runner;
-use tasks::task::{Task, TaskChannel, TaskInfo};
+use tasks::task::Task;
+use tasks::info::TaskInfo;
+use tasks::task::MetaTaskChannel;
 
 use log::info;
 
@@ -27,17 +24,19 @@ pub struct TestMessage {
 
 pub struct TestTaskTalker {
     pub value: i32,
+    task_info: TaskInfo,
 }
 impl Task for TestTaskTalker {
-    fn init(&self, _tx: tasks::task::TaskChannel) -> Result<TaskInfo, anyhow::Error> {
+    fn init(&self, _tx: tasks::task::TaskChannel) -> Result<(), anyhow::Error> {
         info!("TestTaskTalker initialized");
-        Ok(TaskInfo::new("TestTaskTalker"))
+        Ok(())
     }
 
     fn run(
         &self,
         _inputs: Vec<message::record::Record>,
         tx: tasks::task::TaskChannel,
+        _meta_tx: MetaTaskChannel,
     ) -> Result<(), anyhow::Error> {
         let test_msg = TestMessage {
             value: rand::random::<i32>(),
@@ -51,20 +50,27 @@ impl Task for TestTaskTalker {
         tx.send(pub_packet)?;
         Ok(())
     }
+    
+    fn get_task_info(&self) -> &TaskInfo {
+        &self.task_info
+    }
 }
 
-pub struct TestTaskListener {}
+pub struct TestTaskListener {
+    task_info: TaskInfo,
+}
 impl Task for TestTaskListener {
-    fn init(&self, tx: tasks::task::TaskChannel) -> Result<TaskInfo, anyhow::Error> {
+    fn init(&self, tx: tasks::task::TaskChannel) -> Result<(), anyhow::Error> {
         info!("TestTaskListener initialized");
         tx.send(subscribe!("test_*"))?;
-        Ok(TaskInfo::new("TestTaskListener"))
+        Ok(())
     }
 
     fn run(
         &self,
         inputs: Vec<message::record::Record>,
         _tx: tasks::task::TaskChannel,
+        _meta_tx: MetaTaskChannel,
     ) -> Result<(), anyhow::Error> {
         if inputs.is_empty() {
             return Ok(());
@@ -82,13 +88,22 @@ impl Task for TestTaskListener {
 
         Ok(())
     }
+    
+    fn get_task_info(&self) -> &TaskInfo {
+        &self.task_info
+    }
 }
 
 fn main() {
     pretty_env_logger::init();
     let mut runner = Runner::new();
-    runner.add_task(Arc::new(Mutex::new(TestTaskTalker { value: 0 })));
-    runner.add_task(Arc::new(Mutex::new(TestTaskListener {})));
+    runner.add_task(Arc::new(Mutex::new(TestTaskTalker { 
+        value: 0,
+        task_info: TaskInfo::new("TestTaskTalker"),
+    })));
+    runner.add_task(Arc::new(Mutex::new(TestTaskListener {
+        task_info: TaskInfo::new("TestTaskListener"),
+    })));
     let start_time = std::time::Instant::now();
     let max_duration = std::time::Duration::from_secs(5);
     runner.init().unwrap();

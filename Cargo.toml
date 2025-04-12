@@ -1,2 +1,3 @@
 [workspace]
 members = ["pubsub", "quad", "sim"]
+resolver = "2"
