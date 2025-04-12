@@ -7,8 +7,6 @@ use log::{info, error};
 use rusty_docker_compose::DockerComposeCmd;
 
 use pubsub::tasks::runner::Runner;
-use pubsub::tasks::task::Task;
-use pubsub::tasks::info::TaskInfo;
 use quad::ardulink::config::ArdulinkConnectionType;
 use quad::ardulink::task::MavlinkTask;
 

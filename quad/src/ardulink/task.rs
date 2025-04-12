@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+
 use anyhow::Error;
 use log::{info, debug, error};
 use serde::{Serialize, Deserialize};
@@ -7,10 +7,10 @@ use mavlink::ardupilotmega::MavMessage;
 use pubsub::tasks::task::{MetaTaskChannel, Task, TaskChannel};
 use pubsub::tasks::info::TaskInfo;
 use pubsub::message::record::Record;
-use pubsub::{publish, publish_json};
+use pubsub::publish_json;
 use pubsub::subscribe;
 
-use crate::ardulink::connection::{ArdulinkConnection, ArdulinkError};
+use crate::ardulink::connection::ArdulinkConnection;
 use crate::ardulink::config::ArdulinkConnectionType;
 
 /// Serializable representation of a MAVLink message for publishing to pubsub
