@@ -91,7 +91,7 @@ impl Task for MavlinkTask {
         self.connection = Some(connection);
         
         // Set up topic subscription for command messages
-        tx.send(subscribe!("mavlink/send"))?;
+        tx.send(subscribe!("mavlink/send/*"))?;
         
         // Publish connection status for ExecTaskWatchdog
         let connection_status = ConnectionStatus { connected: true };
@@ -115,9 +115,10 @@ impl Task for MavlinkTask {
             if let Ok(topic) = record.try_get_topic() {
                 if topic.starts_with("mavlink/send/") {
                     // Here we could handle command messages sent to the MAVLink device
-                    debug!("Received command on topic: {}", topic);
+                   
                     let command = record.to_serde::<MavMessage>()?;
                     for msg in command {
+                        debug!("Mavlink Sending Command: {:?}", msg);
                         self.connection.as_ref().unwrap().send(&msg)?;
                     }
                 }

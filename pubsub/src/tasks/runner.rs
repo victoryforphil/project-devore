@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use log::debug;
+use log::error;
 use log::info;
 
 use crate::message::record::Record;
@@ -196,7 +197,14 @@ impl Runner {
             }
             
             let mut task = task.lock().unwrap();
-            let should_run = task.should_run()?;
+            let should_run = match task.should_run() {
+                Ok(result) => result,
+                Err(err) => {
+                    error!("Task '{}' failed during should_run check: {}", task_id, err);
+                    continue;
+                }
+            };
+            
             if !should_run {
                 continue;
             }
@@ -216,24 +224,41 @@ impl Runner {
 
             let out_channel = mpsc::channel();
             let meta_channel = mpsc::channel();
-            task.run(inputs, out_channel.0, meta_channel.0)?;
+            if let Err(err) = task.run(inputs, out_channel.0, meta_channel.0) {
+                error!("Task '{}' failed during execution: {}", task_id, err);
+                continue;
+            }
             
             let mut n_messages = 0;
             while let Ok(msg) = out_channel.1.recv() {
-                match &msg.get_flag()? {
-                    RecordFlag::SubscribePacket => {
-                        let task_info = task_id.clone();
-                        let topic = msg.try_get_topic()?;
-                        new_subscriptions.push((task_info, topic));
-                    }
-                    RecordFlag::PublishPacket => {
-                        // Add to state for persistence/logging
-                        self.state.lock().unwrap().apply_record(&msg)?;
-                        
-                        // Route the message to all matching subscription queues
-                        let topic = msg.try_get_topic()?;
-                        self.route_message_to_subscribers(&topic, msg.clone())?;
-                    }
+                match &msg.get_flag() {
+                    Ok(flag) => match flag {
+                        RecordFlag::SubscribePacket => {
+                            let task_info = task_id.clone();
+                            match msg.try_get_topic() {
+                                Ok(topic) => new_subscriptions.push((task_info, topic)),
+                                Err(err) => error!("Failed to get topic from subscription message for task '{}': {}", task_id, err)
+                            }
+                        }
+                        RecordFlag::PublishPacket => {
+                            // Add to state for persistence/logging
+                            if let Err(err) = self.state.lock().unwrap().apply_record(&msg) {
+                                error!("Failed to apply record to state for task '{}': {}", task_id, err);
+                                continue;
+                            }
+                            
+                            // Route the message to all matching subscription queues
+                            match msg.try_get_topic() {
+                                Ok(topic) => {
+                                    if let Err(err) = self.route_message_to_subscribers(&topic, msg.clone()) {
+                                        error!("Failed to route message from task '{}': {}", task_id, err);
+                                    }
+                                },
+                                Err(err) => error!("Failed to get topic from publish message for task '{}': {}", task_id, err)
+                            }
+                        }
+                    },
+                    Err(err) => error!("Failed to get flag from message for task '{}': {}", task_id, err)
                 }
                 n_messages += 1;
             }
@@ -273,10 +298,12 @@ impl Runner {
             self.add_subscription(&task_info, topic);
         }
 
-        self.logger
+        if let Err(err) = self.logger
             .lock()
             .unwrap()
-            .process_state(&mut self.state.lock().unwrap())?;
+            .process_state(&mut self.state.lock().unwrap()) {
+                error!("Failed to process state in logger: {}", err);
+            }
             
         // Sleep for 5ms to avoid CPU overuse
         std::thread::sleep(std::time::Duration::from_millis(5));

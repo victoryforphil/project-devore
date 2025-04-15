@@ -9,6 +9,7 @@ use quad::exec::exec_runner::ExecRunner;
 use quad::exec::stage::ExecStage;
 use quad::exec::tasks::exec_task_watchdog::ExecTaskWatchdog;
 use quad::exec::tasks::exec_task_heartbeat::ExecTaskHeartbeat;
+use quad::exec::tasks::exec_task_requeststream::ExecTaskRequestStream;
 use rusty_docker_compose::DockerComposeCmd;
 
 use pubsub::tasks::runner::Runner;
@@ -100,15 +101,19 @@ fn main() -> Result<()> {
     let exec_config = ExecConfig::new()
     .with_default_task("MavlinkTask".to_string())
     .with_stage_task(ExecStage::AwaitConnection, "ExecTaskWatchdog".to_string())
-    .with_stage_task(ExecStage::AwaitingData, "ExecHeartbeatTask".to_string());
+    .with_stage_task(ExecStage::AwaitingData, "ExecHeartbeatTask".to_string())
+    .with_stage_task(ExecStage::AwaitingData, "ExecRequestStreamTask".to_string());
 
     let exec_runner = ExecRunner::new(exec_config);
     let exec_task_watchdog = ExecTaskWatchdog::new();
     let exec_task_heartbeat = ExecTaskHeartbeat::new();
+    let exec_task_requeststream = ExecTaskRequestStream::new();
 
     runner.add_task(Arc::new(Mutex::new(exec_runner)));
     runner.add_task(Arc::new(Mutex::new(exec_task_watchdog)));
     runner.add_task(Arc::new(Mutex::new(exec_task_heartbeat)));
+    runner.add_task(Arc::new(Mutex::new(exec_task_requeststream)));
+    
     // Initialize tasks
     info!("Initializing tasks");
     runner.init()?;
@@ -118,11 +123,19 @@ fn main() -> Result<()> {
     let max_duration = Duration::from_secs(args.timeout);
     
     info!("Running MAVLink integration for {} seconds", args.timeout);
-    while let Ok(_) = runner.run() {
-        if start_time.elapsed() >= max_duration {
-            break;
+    while let result = runner.run() {
+        match result {
+            Ok(_) => {
+                if start_time.elapsed() >= max_duration {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            },
+            Err(err) => {
+                error!("Runner error: {}", err);
+                break;
+            }
         }
-        std::thread::sleep(Duration::from_millis(100));
     }
 
     // Clean up

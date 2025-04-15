@@ -75,7 +75,7 @@ impl Task for ExecTaskHeartbeat {
         
         
         // Publish heartbeat to mavlink/send topic for ArdulinkConnection to transmit
-        let pub_packet = publish!("mavlink/send", &heartbeat);
+        let pub_packet = publish!("mavlink/send/heartbeat", &heartbeat);
         if let Err(e) = tx.send(pub_packet) {
             error!("Failed to send heartbeat message: {}", e);
         }

@@ -113,23 +113,7 @@ impl ArdulinkConnection {
         info!("ArduLink => Setting up connection parameters");
         mav_con.set_protocol_version(mavlink::MavlinkVersion::V2);
 
-        // Request data streams
-        let request_stream = build_request_stream();
-        
-        /// Create a message enabling data streaming
-        fn build_request_stream() -> mavlink::ardupilotmega::MavMessage {
-            mavlink::ardupilotmega::MavMessage::REQUEST_DATA_STREAM(
-                mavlink::ardupilotmega::REQUEST_DATA_STREAM_DATA {
-                    target_system: 0,
-                    target_component: 0,
-                    req_stream_id: 0,
-                    req_message_rate: 10,
-                    start_stop: 1,
-                },
-            )
-        }
-        
-        mav_con.send(&mavlink::MavHeader::default(), &request_stream).unwrap();
+        // Request streams now handled by ExecTaskRequestStream
         
         let mav_con = Arc::new(mav_con);
 
