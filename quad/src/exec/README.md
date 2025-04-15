@@ -7,6 +7,8 @@
 - Default Tasks below can be made via constructors, with the option to override the default tasks
 - Additional user defined tasks can be to the config, most importantly which tasks to run once
 - HealthyGuided is reached (aka the actual autonomy tasks).
+- Auto stage almost runs "under this". Almost like a mini exec. However the parent one can still kill it / spawns it. 
+
 
 
 ## Initial Stage Notes
@@ -14,6 +16,7 @@
   - MavLinkTask
 - Stages:
   - AwaitConnection
+    - ConnectionWatchdog
   - AwaitingData
     - RequestStream
     - HeartbeatTask

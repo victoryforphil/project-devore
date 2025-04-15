@@ -129,11 +129,15 @@ impl Runner {
                 match &meta_msg.command {
                     MetaCommand::SpawnTask => {
                         info!("Spawning task: {}", meta_msg.task_info);
-                        self.spawn_tasks.insert(meta_msg.task_info.clone());
+                        if !self.running_tasks.contains(&meta_msg.task_info) {
+                            self.spawn_tasks.insert(meta_msg.task_info.clone());
+                        }
                     }
                     MetaCommand::KillTask => {
-                        info!("Killing task: {}", meta_msg.task_info);
-                        self.running_tasks.remove(&meta_msg.task_info);
+                        if self.running_tasks.contains(&meta_msg.task_info) {
+                            info!("Killing task: {}", meta_msg.task_info);
+                            self.running_tasks.remove(&meta_msg.task_info);
+                        }
                     }
                 }
             }

@@ -7,12 +7,13 @@ use pubsub::{subscribe, tasks::{
     task::Task,
 }};
 
-use super::{exec_config::ExecConfig, stage::ExecStage};
+use super::{exec_config::ExecConfig, stage::ExecStage, messages::ExecStageMessage};
 
 pub struct ExecRunner {
     pub config: ExecConfig,
     pub stage: ExecStage,
     spawned_tasks: Vec<TaskInfo>,
+    info: TaskInfo,
 }
 
 impl ExecRunner {
@@ -21,6 +22,7 @@ impl ExecRunner {
             config,
             stage: ExecStage::AwaitConnection,
             spawned_tasks: vec![],
+            info: TaskInfo::new("ExecRunner").with_insta_spawn(),
         }
     }
 }
@@ -60,10 +62,10 @@ impl Task for ExecRunner {
         for record in &inputs {
             if let Ok(topic) = record.try_get_topic() {
                 if topic.starts_with("exec/stage") {
-                    let stage: Vec<ExecStage> = record.to_serde().unwrap();
+                    let stage: Vec<ExecStageMessage> = record.to_serde().unwrap();
                     for s in stage {
-                        info!("Received exec/stage update: {}", s);
-                        self.stage = s;
+                        info!("Received exec/stage update: {}", s.stage);
+                        self.stage = s.stage;
                     }
                 }
             }
@@ -90,8 +92,16 @@ impl Task for ExecRunner {
         let mut tasks_to_spawn = Vec::new();
         let mut tasks_to_kill = Vec::new();
         
+        // Combine desired tasks with default tasks
+        let mut effective_tasks = desired_tasks.clone();
+        for default_task in &self.config.default_tasks {
+            if !effective_tasks.contains(default_task) {
+                effective_tasks.push(default_task.clone());
+            }
+        }
+        
         // Find tasks that need to be spawned
-        for task_name in desired_tasks.iter() {
+        for task_name in effective_tasks.iter() {
             if !self.spawned_tasks.iter().any(|t| &t.name == task_name) {
                 tasks_to_spawn.push(task_name.clone());
             }
@@ -99,7 +109,7 @@ impl Task for ExecRunner {
         
         // Find tasks that need to be killed
         for task in self.spawned_tasks.iter() {
-            if !desired_tasks.iter().any(|t| t == &task.name) {
+            if !effective_tasks.iter().any(|t| t == &task.name) {
                 tasks_to_kill.push(task.clone());
             }
         }
@@ -133,7 +143,7 @@ impl Task for ExecRunner {
     }
 
     fn get_task_info(&self) -> &pubsub::tasks::info::TaskInfo {
-        todo!()
+        &self.info
     }
 }
 

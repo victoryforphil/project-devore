@@ -6,11 +6,12 @@ use mavlink::ardupilotmega::MavMessage;
 use pubsub::tasks::task::{MetaTaskChannel, Task, TaskChannel};
 use pubsub::tasks::info::TaskInfo;
 use pubsub::message::record::Record;
-use pubsub::publish_json;
+use pubsub::{publish, publish_json};
 use pubsub::subscribe;
 
 use crate::ardulink::connection::ArdulinkConnection;
 use crate::ardulink::config::ArdulinkConnectionType;
+use crate::exec::tasks::exec_task_watchdog::ConnectionStatus;
 
 /// Serializable representation of a MAVLink message for publishing to pubsub
 #[derive(Serialize, Deserialize, Debug)]
@@ -52,7 +53,7 @@ impl MavlinkTask {
         Self {
             connection_type,
             connection: None,
-            info: TaskInfo::new("MavlinkTask").with_insta_spawn(),
+            info: TaskInfo::new("MavlinkTask")
         }
     }
     
@@ -91,6 +92,11 @@ impl Task for MavlinkTask {
         
         // Set up topic subscription for command messages
         tx.send(subscribe!("mavlink/command/#"))?;
+        
+        // Publish connection status for ExecTaskWatchdog
+        let connection_status = ConnectionStatus { connected: true };
+        let pub_packet = publish!("mavlink/connected", &connection_status);
+        tx.send(pub_packet)?;
         
         Ok(())
     }
