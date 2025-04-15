@@ -1,0 +1,12 @@
+$schema: 'https://moonrepo.dev/schemas/tasks.json'
+
+language: "typescript"
+
+project:
+  name: 'designer'
+  description: 'Drone Light Show Designer App'
+  metadata:
+    tag: 'designer'
+
+tags:
+- 'docker'

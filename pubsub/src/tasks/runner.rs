@@ -8,6 +8,7 @@ use std::sync::Mutex;
 use log::debug;
 use log::error;
 use log::info;
+use log::trace;
 
 use crate::message::record::Record;
 use crate::message::record::RecordFlag;
@@ -47,7 +48,7 @@ impl Runner {
             logger: Arc::new(Mutex::new(
                 RunnerLogger::new(
                     PathBuf::from("logs"),
-                    100,
+                    5000,
                     10,
                     [OutputFormat::Parquet, OutputFormat::Csv].into(),
                     None,
@@ -292,7 +293,7 @@ impl Runner {
                 n_messages
             ));
         }
-        debug!("{}", debug_str);
+        trace!("{}", debug_str);
         
         for (task_info, topic) in new_subscriptions {
             self.add_subscription(&task_info, topic);

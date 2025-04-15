@@ -1,7 +1,7 @@
 use anyhow::Error;
 use log::{info, debug, error};
 use serde::{Serialize, Deserialize};
-use mavlink::ardupilotmega::MavMessage;
+use mavlink::ardupilotmega::{MavMessage, STATUSTEXT_DATA, MavSeverity, MavModeFlag, HEARTBEAT_DATA};
 
 use pubsub::tasks::task::{MetaTaskChannel, Task, TaskChannel};
 use pubsub::tasks::info::TaskInfo;
@@ -20,6 +20,31 @@ pub struct MavlinkMessageWrapper {
     pub message: String,
     /// The message type identifier
     pub message_type: String,
+}
+
+/// Serializable representation of a status text message
+#[derive(Serialize, Deserialize, Debug)]
+pub struct StatusTextMessage {
+    /// The text content
+    pub text: String,
+    /// Severity level
+    pub severity: u8,
+}
+#[derive(Serialize, Deserialize, Debug)]
+pub struct HeartbeatFlag{
+    pub value: bool,
+}
+/// Represents the autopilot status flags from a heartbeat message
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AutopilotStatus {
+    pub custom_mode_enabled: bool,
+    pub test_enabled: bool,
+    pub auto_enabled: bool,
+    pub guided_enabled: bool,
+    pub stabilize_enabled: bool,
+    pub hil_enabled: bool,
+    pub manual_input_enabled: bool,
+    pub safety_armed: bool,
 }
 
 impl From<&MavMessage> for MavlinkMessageWrapper {
@@ -71,6 +96,89 @@ impl MavlinkTask {
         
         // Create and send publish packet
         let pub_packet = publish_json!(&topic, wrapper.message.as_str());
+        tx.send(pub_packet)?;
+        
+        // Special handling for statustext messages
+        if let MavMessage::STATUSTEXT(status_text) = msg {
+            self.process_statustext(status_text, tx)?;
+        }
+        
+        // Special handling for heartbeat messages
+        if let MavMessage::HEARTBEAT(heartbeat) = msg {
+            self.process_heartbeat(heartbeat, tx)?;
+        }
+        
+        Ok(())
+    }
+    
+    /// Process a status text message
+    fn process_statustext(
+        &self,
+        status_text: &STATUSTEXT_DATA,
+        tx: &TaskChannel
+    ) -> Result<(), Error> {
+        // Convert the C-style array to a Rust string and trim null characters
+        let text = status_text.text.iter()
+            .take_while(|&&c| c != 0)
+            .map(|&c| c as char)
+            .collect::<String>();
+        
+        // Log the status text with a clean format
+        info!("UAV Status Text [Severity {:?}]:\n\t{}\n-----------------", 
+            status_text.severity, text);
+        
+        // Create a status text message object for publishing
+        let status_msg = StatusTextMessage {
+            text,
+            severity: status_text.severity as u8,
+        };
+        
+        // Republish to the reprocessed topic
+        let pub_packet = publish!("mavlink/reproc/statustext", &status_msg);
+        tx.send(pub_packet)?;
+        
+        Ok(())
+    }
+    
+    /// Decode the mode flags from mavlink heartbeat
+    fn decode_mode_flag(&self, flag: MavModeFlag) -> AutopilotStatus {
+        AutopilotStatus {
+            custom_mode_enabled: flag
+                .intersects(MavModeFlag::MAV_MODE_FLAG_CUSTOM_MODE_ENABLED),
+            test_enabled: flag
+                .intersects(MavModeFlag::MAV_MODE_FLAG_TEST_ENABLED),
+            auto_enabled: flag
+                .intersects(MavModeFlag::MAV_MODE_FLAG_AUTO_ENABLED),
+            guided_enabled: flag
+                .intersects(MavModeFlag::MAV_MODE_FLAG_GUIDED_ENABLED),
+            stabilize_enabled: flag
+                .intersects(MavModeFlag::MAV_MODE_FLAG_STABILIZE_ENABLED),
+            hil_enabled: flag
+                .intersects(MavModeFlag::MAV_MODE_FLAG_HIL_ENABLED),
+            manual_input_enabled: flag.intersects(
+                MavModeFlag::MAV_MODE_FLAG_MANUAL_INPUT_ENABLED,
+            ),
+            safety_armed: flag
+                .intersects(MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED),
+        }
+    }
+
+
+    
+    /// Process a heartbeat message
+    fn process_heartbeat(
+        &self,
+        heartbeat: &HEARTBEAT_DATA,
+        tx: &TaskChannel
+    ) -> Result<(), Error> {
+        // Decode the mode flags
+        let status = self.decode_mode_flag(heartbeat.base_mode);
+        
+        let pub_packet = publish!("mavlink/reproc/heartbeat_armed", &HeartbeatFlag{value: status.safety_armed}  );
+        tx.send(pub_packet)?;
+        
+        // Also publish the full status object
+        let pub_packet = publish!("mavlink/reproc/heartbeat_status", &status);
         tx.send(pub_packet)?;
         
         Ok(())

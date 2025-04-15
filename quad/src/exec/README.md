@@ -20,12 +20,14 @@
   - AwaitingData
     - RequestStream
     - HeartbeatTask
+    - DataWatchdog
   - AwaitingHealthy
-    - HealthChecks
+    - HealthWatchdog
   - AwaitingLock
-    - LockChecks
+    - LockWatchdog
   - HealthyUnarmed
-    - ArmChecks
+    - SendArm
+    - ArmWatchdog
   - HealthyArmed
     - ArmedIdle
   - HealthyGuided

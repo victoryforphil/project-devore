@@ -10,6 +10,11 @@ use quad::exec::stage::ExecStage;
 use quad::exec::tasks::exec_task_watchdog::ExecTaskWatchdog;
 use quad::exec::tasks::exec_task_heartbeat::ExecTaskHeartbeat;
 use quad::exec::tasks::exec_task_requeststream::ExecTaskRequestStream;
+use quad::exec::tasks::exec_task_datawatchdog::ExecTaskDataWatchdog;
+use quad::exec::tasks::exec_task_healthwatchdog::ExecTaskHealthWatchdog;
+use quad::exec::tasks::exec_task_lockwatchdog::ExecTaskLockWatchdog;
+use quad::exec::tasks::exec_task_sendarm::ExecTaskSendArm;
+use quad::exec::tasks::exec_task_armwatchdog::ExecTaskArmWatchdog;
 use rusty_docker_compose::DockerComposeCmd;
 
 use pubsub::tasks::runner::Runner;
@@ -102,17 +107,35 @@ fn main() -> Result<()> {
     .with_default_task("MavlinkTask".to_string())
     .with_stage_task(ExecStage::AwaitConnection, "ExecTaskWatchdog".to_string())
     .with_stage_task(ExecStage::AwaitingData, "ExecHeartbeatTask".to_string())
-    .with_stage_task(ExecStage::AwaitingData, "ExecRequestStreamTask".to_string());
+    .with_stage_task(ExecStage::AwaitingData, "ExecRequestStreamTask".to_string())
+    .with_stage_task(ExecStage::AwaitingData, "ExecTaskDataWatchdog".to_string())
+    .with_stage_task(ExecStage::AwaitingHealthy, "ExecHeartbeatTask".to_string())
+    .with_stage_task(ExecStage::AwaitingHealthy, "ExecTaskHealthWatchdog".to_string())
+    .with_stage_task(ExecStage::AwaitingLock, "ExecTaskLockWatchdog".to_string())
+    .with_stage_task(ExecStage::AwaitingLock, "ExecHeartbeatTask".to_string())
+    .with_stage_task(ExecStage::HealthyUnarmed, "ExecTaskSendArm".to_string())
+    .with_stage_task(ExecStage::HealthyUnarmed, "ExecArmWatchdog".to_string())    
+    .with_stage_task(ExecStage::HealthyUnarmed, "ExecHeartbeatTask".to_string());
 
     let exec_runner = ExecRunner::new(exec_config);
     let exec_task_watchdog = ExecTaskWatchdog::new();
     let exec_task_heartbeat = ExecTaskHeartbeat::new();
     let exec_task_requeststream = ExecTaskRequestStream::new();
+    let exec_task_datawatchdog = ExecTaskDataWatchdog::new();
+    let exec_task_healthwatchdog = ExecTaskHealthWatchdog::new();
+    let exec_task_lockwatchdog = ExecTaskLockWatchdog::new();
+    let exec_task_sendarm = ExecTaskSendArm::new();
+    let exec_task_armwatchdog = ExecTaskArmWatchdog::new();
 
     runner.add_task(Arc::new(Mutex::new(exec_runner)));
     runner.add_task(Arc::new(Mutex::new(exec_task_watchdog)));
     runner.add_task(Arc::new(Mutex::new(exec_task_heartbeat)));
     runner.add_task(Arc::new(Mutex::new(exec_task_requeststream)));
+    runner.add_task(Arc::new(Mutex::new(exec_task_datawatchdog)));
+    runner.add_task(Arc::new(Mutex::new(exec_task_healthwatchdog)));
+    runner.add_task(Arc::new(Mutex::new(exec_task_lockwatchdog)));
+    runner.add_task(Arc::new(Mutex::new(exec_task_sendarm)));
+    runner.add_task(Arc::new(Mutex::new(exec_task_armwatchdog)));
     
     // Initialize tasks
     info!("Initializing tasks");
