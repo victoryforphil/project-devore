@@ -106,9 +106,10 @@ impl Runner {
     pub fn init(&mut self) -> Result<(), anyhow::Error> {
         let mut new_subscriptions = Vec::new();
         for (task_id, task) in &self.tasks {
-            let task = task.lock().unwrap();
+            let mut task = task.lock().unwrap();
             let tx = mpsc::channel();
-            task.init(tx.0)?;
+            let meta_tx = mpsc::channel();
+            task.init(tx.0, meta_tx.0)?;
 
             while let Ok(record_msg) = tx.1.recv() {
                 let record_type = record_msg.get_flag()?;
@@ -123,6 +124,20 @@ impl Runner {
                     }
                 }
             }
+
+            while let Ok(meta_msg) = meta_tx.1.recv() {
+                match &meta_msg.command {
+                    MetaCommand::SpawnTask => {
+                        info!("Spawning task: {}", meta_msg.task_info);
+                        self.spawn_tasks.insert(meta_msg.task_info.clone());
+                    }
+                    MetaCommand::KillTask => {
+                        info!("Killing task: {}", meta_msg.task_info);
+                        self.running_tasks.remove(&meta_msg.task_info);
+                    }
+                }
+            }
+            
         }
         for (task_info, topic) in new_subscriptions {
             self.add_subscription(&task_info, topic);
@@ -146,7 +161,7 @@ impl Runner {
                 self.running_tasks.insert(task_id.clone());
             }
             
-            let task = task.lock().unwrap();
+            let mut task = task.lock().unwrap();
             let should_run = task.should_run()?;
             if !should_run {
                 continue;
@@ -230,7 +245,7 @@ impl Runner {
             .unwrap()
             .dump_remaining_state(&mut self.state.lock().unwrap())?;
         for task in self.tasks.values() {
-            let task = task.lock().unwrap();
+            let mut task = task.lock().unwrap();
             task.cleanup()?;
         }
 

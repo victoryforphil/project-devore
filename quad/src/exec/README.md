@@ -4,6 +4,9 @@
 - Once conditions are met, will spawn the initial tasks
 - Will continously monitor MavLink data and update various health topics on change
 - Initial version can represent a linear chain of stages, with a group of tasks associated with each stage
+- Default Tasks below can be made via constructors, with the option to override the default tasks
+- Additional user defined tasks can be to the config, most importantly which tasks to run once
+- HealthyGuided is reached (aka the actual autonomy tasks).
 
 
 ## Initial Stage Notes

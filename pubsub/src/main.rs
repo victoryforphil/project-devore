@@ -27,13 +27,17 @@ pub struct TestTaskTalker {
     task_info: TaskInfo,
 }
 impl Task for TestTaskTalker {
-    fn init(&self, _tx: tasks::task::TaskChannel) -> Result<(), anyhow::Error> {
+    fn init(&mut self, tx: tasks::task::TaskChannel, meta_tx: MetaTaskChannel) -> Result<(), anyhow::Error> {
         info!("TestTaskTalker initialized");
         Ok(())
     }
 
+    fn should_run(&self) -> Result<bool, anyhow::Error> {
+        Ok(true)
+    }
+
     fn run(
-        &self,
+        &mut self,
         _inputs: Vec<message::record::Record>,
         tx: tasks::task::TaskChannel,
         _meta_tx: MetaTaskChannel,
@@ -51,6 +55,10 @@ impl Task for TestTaskTalker {
         Ok(())
     }
     
+    fn cleanup(&mut self) -> Result<(), anyhow::Error> {
+        Ok(())
+    }
+    
     fn get_task_info(&self) -> &TaskInfo {
         &self.task_info
     }
@@ -60,14 +68,18 @@ pub struct TestTaskListener {
     task_info: TaskInfo,
 }
 impl Task for TestTaskListener {
-    fn init(&self, tx: tasks::task::TaskChannel) -> Result<(), anyhow::Error> {
+    fn init(&mut self, tx: tasks::task::TaskChannel, meta_tx: MetaTaskChannel) -> Result<(), anyhow::Error> {
         info!("TestTaskListener initialized");
         tx.send(subscribe!("test_*"))?;
         Ok(())
     }
 
+    fn should_run(&self) -> Result<bool, anyhow::Error> {
+        Ok(true)
+    }
+
     fn run(
-        &self,
+        &mut self,
         inputs: Vec<message::record::Record>,
         _tx: tasks::task::TaskChannel,
         _meta_tx: MetaTaskChannel,
@@ -86,6 +98,10 @@ impl Task for TestTaskListener {
             }
         }
 
+        Ok(())
+    }
+    
+    fn cleanup(&mut self) -> Result<(), anyhow::Error> {
         Ok(())
     }
     

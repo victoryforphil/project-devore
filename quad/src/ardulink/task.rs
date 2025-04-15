@@ -1,4 +1,3 @@
-
 use anyhow::Error;
 use log::{info, debug, error};
 use serde::{Serialize, Deserialize};
@@ -78,7 +77,7 @@ impl MavlinkTask {
 }
 
 impl Task for MavlinkTask {
-    fn init(&self, tx: TaskChannel) -> Result<(), Error> {
+    fn init(&mut self, tx: TaskChannel, meta_tx: MetaTaskChannel) -> Result<(), Error> {
         info!("MavlinkTask initializing with connection: {}", self.connection_type.connection_string());
         
         // Create the connection
@@ -88,10 +87,7 @@ impl Task for MavlinkTask {
         connection.start_thread()?;
         
         // Store the connection
-        let mut this = self as *const _ as *mut MavlinkTask;
-        unsafe {
-            (*this).connection = Some(connection);
-        }
+        self.connection = Some(connection);
         
         // Set up topic subscription for command messages
         tx.send(subscribe!("mavlink/command/#"))?;
@@ -99,12 +95,15 @@ impl Task for MavlinkTask {
         Ok(())
     }
     
+    fn should_run(&self) -> Result<bool, anyhow::Error> {
+        Ok(true)
+    }
 
     fn get_task_info(&self) -> &TaskInfo {
         &self.info
     }
 
-    fn run(&self, inputs: Vec<Record>, tx: TaskChannel, _: MetaTaskChannel) -> Result<(), Error> {
+    fn run(&mut self, inputs: Vec<Record>, tx: TaskChannel, _meta_tx: MetaTaskChannel) -> Result<(), Error> {
         // Process any commands from subscribed topics
         for record in &inputs {
             if let Ok(topic) = record.try_get_topic() {
@@ -134,15 +133,12 @@ impl Task for MavlinkTask {
         Ok(())
     }
     
-    fn cleanup(&self) -> Result<(), Error> {
+    fn cleanup(&mut self) -> Result<(), Error> {
         info!("MavlinkTask cleaning up");
         
         // Stop the connection thread if it exists
-        let mut this = self as *const _ as *mut MavlinkTask;
-        unsafe {
-            if let Some(connection) = &mut (*this).connection {
-                connection.stop_thread()?;
-            }
+        if let Some(connection) = &mut self.connection {
+            connection.stop_thread()?;
         }
         
         Ok(())
