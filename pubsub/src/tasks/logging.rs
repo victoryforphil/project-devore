@@ -71,6 +71,15 @@ impl RunnerLogger {
         let file = File::create(path)
             .with_context(|| format!("Failed to create csv file: {:?}", path))?;
         
+        // Check if there are any list data types in the schema
+        // which would cause CSV writing to fail
+        for field in batch.schema().fields() {
+            if let arrow::datatypes::DataType::List(_) = field.data_type() {
+                log::warn!("CSV output contains List type fields which are not supported in CSV. Skipping CSV for this record.");
+                return Ok(()); // Just skip instead of failing
+            }
+        }
+        
         // Standard Arrow CSV writing
         let mut writer = CsvWriter::new(file);
         writer.write(batch)?;

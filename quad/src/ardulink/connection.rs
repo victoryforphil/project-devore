@@ -113,18 +113,6 @@ impl ArdulinkConnection {
         info!("ArduLink => Setting up connection parameters");
         mav_con.set_protocol_version(mavlink::MavlinkVersion::V2);
 
-        // Send initial heartbeat
-        let heartbeat = MavMessage::HEARTBEAT(mavlink::ardupilotmega::HEARTBEAT_DATA {
-            custom_mode: 0,
-            mavtype: mavlink::ardupilotmega::MavType::MAV_TYPE_GCS,
-            autopilot: mavlink::ardupilotmega::MavAutopilot::MAV_AUTOPILOT_INVALID,
-            base_mode: mavlink::ardupilotmega::MavModeFlag::empty(),
-            system_status: mavlink::ardupilotmega::MavState::MAV_STATE_ACTIVE,
-            mavlink_version: 3,
-        });
-        
-        mav_con.send(&mavlink::MavHeader::default(), &heartbeat).unwrap();
-
         // Request data streams
         let request_stream = build_request_stream();
         
@@ -146,45 +134,6 @@ impl ArdulinkConnection {
         let mav_con = Arc::new(mav_con);
 
         info!("ArduLink => Starting main threads...");
-        
-        // Heartbeat thread
-        info!("ArduLink => Spawning heartbeat thread");
-        let heartbeat_handle = thread::spawn({
-            let vehicle = mav_con.clone();
-            let should_stop = should_stop.clone();
-            move || {
-                while !should_stop.load(Ordering::SeqCst) {
-                    let heartbeat = MavMessage::HEARTBEAT(mavlink::ardupilotmega::HEARTBEAT_DATA {
-                        custom_mode: 0,
-                        mavtype: mavlink::ardupilotmega::MavType::MAV_TYPE_QUADROTOR,
-                        autopilot: mavlink::ardupilotmega::MavAutopilot::MAV_AUTOPILOT_ARDUPILOTMEGA,
-                        base_mode: mavlink::ardupilotmega::MavModeFlag::empty(),
-                        system_status: mavlink::ardupilotmega::MavState::MAV_STATE_STANDBY,
-                        mavlink_version: 0x3,
-                    });
-                    
-                    // Only send if we're not stopping
-                    if !should_stop.load(Ordering::SeqCst) {
-                        let res = vehicle.send_default(&heartbeat);
-                        if res.is_ok() {
-                            debug!("ArduLink => Heartbeat sent");
-                        } else if !should_stop.load(Ordering::SeqCst) {
-                            // Only log errors if we're not in the process of stopping
-                            error!("ArduLink => Heartbeat send failed: {:?}", res);
-                        }
-                    }
-                    
-                    // Use smaller sleep interval and check stop flag more frequently
-                    for _ in 0..10 {
-                        if should_stop.load(Ordering::SeqCst) {
-                            break;
-                        }
-                        thread::sleep(Duration::from_millis(100));
-                    }
-                }
-                debug!("ArduLink => Heartbeat thread exiting");
-            }
-        });
 
         // Send thread
         info!("ArduLink => Spawning send thread");
@@ -268,7 +217,6 @@ impl ArdulinkConnection {
         });
         
         // Join threads when one exits or stop is requested
-        let _ = heartbeat_handle.join();
         let _ = send_handle.join();
         let _ = receive_handle.join();
         

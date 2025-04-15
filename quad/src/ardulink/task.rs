@@ -91,7 +91,7 @@ impl Task for MavlinkTask {
         self.connection = Some(connection);
         
         // Set up topic subscription for command messages
-        tx.send(subscribe!("mavlink/command/#"))?;
+        tx.send(subscribe!("mavlink/send"))?;
         
         // Publish connection status for ExecTaskWatchdog
         let connection_status = ConnectionStatus { connected: true };
@@ -100,7 +100,7 @@ impl Task for MavlinkTask {
         
         Ok(())
     }
-    
+
     fn should_run(&self) -> Result<bool, anyhow::Error> {
         Ok(true)
     }
@@ -113,12 +113,13 @@ impl Task for MavlinkTask {
         // Process any commands from subscribed topics
         for record in &inputs {
             if let Ok(topic) = record.try_get_topic() {
-                if topic.starts_with("mavlink/command/") {
+                if topic.starts_with("mavlink/send/") {
                     // Here we could handle command messages sent to the MAVLink device
                     debug!("Received command on topic: {}", topic);
-                    
-                    // TODO: Implement command handling by extracting the command from the record
-                    // and sending it via self.connection.as_ref().unwrap().send()
+                    let command = record.to_serde::<MavMessage>()?;
+                    for msg in command {
+                        self.connection.as_ref().unwrap().send(&msg)?;
+                    }
                 }
             }
         }

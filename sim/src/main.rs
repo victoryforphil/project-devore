@@ -8,6 +8,7 @@ use quad::exec::exec_config::ExecConfig;
 use quad::exec::exec_runner::ExecRunner;
 use quad::exec::stage::ExecStage;
 use quad::exec::tasks::exec_task_watchdog::ExecTaskWatchdog;
+use quad::exec::tasks::exec_task_heartbeat::ExecTaskHeartbeat;
 use rusty_docker_compose::DockerComposeCmd;
 
 use pubsub::tasks::runner::Runner;
@@ -98,13 +99,16 @@ fn main() -> Result<()> {
 
     let exec_config = ExecConfig::new()
     .with_default_task("MavlinkTask".to_string())
-    .with_stage_task(ExecStage::AwaitConnection, "ExecTaskWatchdog".to_string());
+    .with_stage_task(ExecStage::AwaitConnection, "ExecTaskWatchdog".to_string())
+    .with_stage_task(ExecStage::AwaitingData, "ExecHeartbeatTask".to_string());
 
     let exec_runner = ExecRunner::new(exec_config);
     let exec_task_watchdog = ExecTaskWatchdog::new();
+    let exec_task_heartbeat = ExecTaskHeartbeat::new();
 
     runner.add_task(Arc::new(Mutex::new(exec_runner)));
     runner.add_task(Arc::new(Mutex::new(exec_task_watchdog)));
+    runner.add_task(Arc::new(Mutex::new(exec_task_heartbeat)));
     // Initialize tasks
     info!("Initializing tasks");
     runner.init()?;

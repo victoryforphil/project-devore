@@ -11,6 +11,7 @@ use log::info;
 use crate::message::record::Record;
 use crate::message::record::RecordFlag;
 use crate::tasks::meta_control::MetaCommand;
+use crate::tasks::subscription_queue::SubscriptionQueue;
 
 use super::info::TaskInfo;
 use super::logging::OutputFormat;
@@ -23,6 +24,7 @@ pub struct Runner {
     running_tasks: HashSet<TaskInfo>,
     state: Arc<Mutex<RunnerState>>,
     subscriptions: HashMap<TaskInfo, Vec<String>>,
+    subscription_queues: HashMap<TaskInfo, Vec<SubscriptionQueue>>,
     logger: Arc<Mutex<RunnerLogger>>,
 }
 
@@ -40,6 +42,7 @@ impl Runner {
             running_tasks: HashSet::new(),
             state: Arc::new(Mutex::new(RunnerState::new())),
             subscriptions: HashMap::new(),
+            subscription_queues: HashMap::new(),
             logger: Arc::new(Mutex::new(
                 RunnerLogger::new(
                     PathBuf::from("logs"),
@@ -71,10 +74,32 @@ impl Runner {
             "Adding subscription for task {} with topic {}",
             task_info, topic
         );
+        
+        // Keep backward compatibility with the old subscriptions map for now
         self.subscriptions
             .entry(task_info.clone())
             .or_default()
-            .push(topic);
+            .push(topic.clone());
+        
+        // Create a new subscription queue for this task and topic
+        let sub_queue = SubscriptionQueue::new(task_info.clone(), topic.clone());
+        
+        // Add the subscription queue to the map
+        self.subscription_queues
+            .entry(task_info.clone())
+            .or_default()
+            .push(sub_queue.clone());
+        
+        // Send any existing data for this topic pattern to the queue
+        // This ensures that if a subscription is made after data is published,
+        // the subscriber will still receive the most recent data
+        if let Ok(state_lock) = self.state.lock() {
+            if let Ok(records) = state_lock.query_latest_topic_data(&topic) {
+                for record in records {
+                    sub_queue.push(record);
+                }
+            }
+        }
     }
 
     pub fn start_task(&mut self, task_info: &TaskInfo) -> Result<(), anyhow::Error> {
@@ -120,7 +145,12 @@ impl Runner {
                         new_subscriptions.push((task_info, topic));
                     }
                     RecordFlag::PublishPacket => {
+                        // Store in state for logging/persistence
                         self.state.lock().unwrap().apply_record(&record_msg)?;
+                        
+                        // Route to any existing subscribers
+                        let topic = record_msg.try_get_topic()?;
+                        self.route_message_to_subscribers(&topic, record_msg.clone())?;
                     }
                 }
             }
@@ -171,22 +201,23 @@ impl Runner {
                 continue;
             }
 
+            // New approach: Get inputs by draining all subscription queues for this task
             let mut inputs: Vec<Record> = Vec::new();
-            let subs = self
-                .subscriptions
-                .get(task_id)
-                .unwrap_or(&Vec::new())
-                .clone();
-            for sub in subs {
-                let state = self.state.lock().unwrap();
-                let topic = state.query_latest_topic_data(&sub)?;
-                debug_inputs.push((task_id.clone(), topic.len()));
-                inputs.extend(topic);
+            let queues = self.subscription_queues.get(task_id).cloned().unwrap_or_default();
+            let mut total_inputs = 0;
+            
+            for queue in &queues {
+                let records = queue.drain();
+                total_inputs += records.len();
+                inputs.extend(records);
             }
+            
+            debug_inputs.push((task_id.clone(), total_inputs));
 
             let out_channel = mpsc::channel();
             let meta_channel = mpsc::channel();
             task.run(inputs, out_channel.0, meta_channel.0)?;
+            
             let mut n_messages = 0;
             while let Ok(msg) = out_channel.1.recv() {
                 match &msg.get_flag()? {
@@ -196,11 +227,17 @@ impl Runner {
                         new_subscriptions.push((task_info, topic));
                     }
                     RecordFlag::PublishPacket => {
+                        // Add to state for persistence/logging
                         self.state.lock().unwrap().apply_record(&msg)?;
+                        
+                        // Route the message to all matching subscription queues
+                        let topic = msg.try_get_topic()?;
+                        self.route_message_to_subscribers(&topic, msg.clone())?;
                     }
                 }
                 n_messages += 1;
             }
+            
             while let Ok(msg) = meta_channel.1.recv() {
                 match &msg.command {
                     MetaCommand::SpawnTask => {
@@ -216,6 +253,7 @@ impl Runner {
 
             debug_n_output_map.insert(task_id, n_messages);
         }
+        
         let mut debug_str = String::new();
         for (task_info, n_messages) in debug_n_output_map {
             debug_str.push_str(&format!(
@@ -230,6 +268,7 @@ impl Runner {
             ));
         }
         debug!("{}", debug_str);
+        
         for (task_info, topic) in new_subscriptions {
             self.add_subscription(&task_info, topic);
         }
@@ -238,20 +277,55 @@ impl Runner {
             .lock()
             .unwrap()
             .process_state(&mut self.state.lock().unwrap())?;
-        // Sleep for 10ms
+            
+        // Sleep for 5ms to avoid CPU overuse
         std::thread::sleep(std::time::Duration::from_millis(5));
         Ok(())
     }
+    
+    /// Route a published message to all matching subscription queues
+    fn route_message_to_subscribers(&self, topic: &str, message: Record) -> Result<(), anyhow::Error> {
+        for queues in self.subscription_queues.values() {
+            for queue in queues {
+                let pattern = queue.topic_pattern();
+                
+                // Check if this subscription matches the topic
+                if topic.starts_with(pattern) || 
+                   (pattern.contains('*') && self.pattern_matches(pattern, topic)) ||
+                   (pattern.contains('/') && topic.contains(pattern)) {
+                    // Add the message to the queue
+                    queue.push(message.clone());
+                }
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Helper method to check if a topic matches a pattern with wildcards
+    fn pattern_matches(&self, pattern: &str, topic: &str) -> bool {
+        if let Ok(regex) = regex::Regex::new(&pattern.replace('*', ".*")) {
+            regex.is_match(topic)
+        } else {
+            false
+        }
+    }
 
     pub fn cleanup(&mut self) -> Result<(), anyhow::Error> {
+        // Process and dump any remaining state data
         self.logger
             .lock()
             .unwrap()
             .dump_remaining_state(&mut self.state.lock().unwrap())?;
+        
+        // Clean up all tasks
         for task in self.tasks.values() {
             let mut task = task.lock().unwrap();
             task.cleanup()?;
         }
+        
+        // Clear subscription queues
+        self.subscription_queues.clear();
 
         Ok(())
     }

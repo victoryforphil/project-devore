@@ -21,7 +21,7 @@ pub struct ConnectionStatus {
 impl ExecTaskWatchdog {
     pub fn new() -> Self {
         Self {
-            info: TaskInfo::new("ExecTaskWatchdog").with_insta_spawn(),
+            info: TaskInfo::new("ExecTaskWatchdog"),
             connection_detected: false,
         }
     }

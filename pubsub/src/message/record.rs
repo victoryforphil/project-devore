@@ -7,6 +7,7 @@ use serde_json::to_value;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::collections::HashSet;
 
 /// Path separator for flattened field names
 const PATH_SEPARATOR: &str = ".";
