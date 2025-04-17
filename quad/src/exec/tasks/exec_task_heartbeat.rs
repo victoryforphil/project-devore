@@ -1,10 +1,10 @@
-use log::{info, debug, error};
+use log::{debug, error, info};
 use mavlink::ardupilotmega::{MavMessage, MavType, HEARTBEAT_DATA};
-use pubsub::{publish, publish_json, subscribe, tasks::{
-    info::TaskInfo,
-    task::Task,
-}};
-use serde::{Serialize, Deserialize};
+use pubsub::{
+    publish, publish_json, subscribe,
+    tasks::{info::TaskInfo, task::Task},
+};
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 /// Task that sends regular MAVLink heartbeat messages
@@ -41,10 +41,10 @@ impl Task for ExecTaskHeartbeat {
         _meta_tx: pubsub::tasks::task::MetaTaskChannel,
     ) -> Result<(), anyhow::Error> {
         info!("ExecTaskHeartbeat initialized");
-        
+
         // Reset the timer
         self.last_heartbeat_time = std::time::Instant::now();
-        
+
         Ok(())
     }
 
@@ -60,9 +60,9 @@ impl Task for ExecTaskHeartbeat {
         _meta_tx: pubsub::tasks::task::MetaTaskChannel,
     ) -> Result<(), anyhow::Error> {
         debug!("ExecTaskHeartbeat sending heartbeat");
-        
+
         // Create heartbeat message
-       
+
         // Send initial heartbeat
         let heartbeat = MavMessage::HEARTBEAT(mavlink::ardupilotmega::HEARTBEAT_DATA {
             custom_mode: 0,
@@ -72,17 +72,16 @@ impl Task for ExecTaskHeartbeat {
             system_status: mavlink::ardupilotmega::MavState::MAV_STATE_ACTIVE,
             mavlink_version: 3,
         });
-        
-        
+
         // Publish heartbeat to mavlink/send topic for ArdulinkConnection to transmit
         let pub_packet = publish!("mavlink/send/heartbeat", &heartbeat);
         if let Err(e) = tx.send(pub_packet) {
             error!("Failed to send heartbeat message: {}", e);
         }
-        
+
         // Update last heartbeat time
         self.last_heartbeat_time = std::time::Instant::now();
-        
+
         Ok(())
     }
 

@@ -2,4 +2,4 @@
 mod app;
 
 #[cfg(feature = "tui")]
-pub use app::run_tui_app; 
+pub use app::run_tui_app;

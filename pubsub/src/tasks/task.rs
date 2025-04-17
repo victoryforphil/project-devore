@@ -14,7 +14,12 @@ pub trait Task {
         Ok(true)
     }
 
-    fn run(&mut self, inputs: Vec<Record>, tx: TaskChannel, meta_tx: MetaTaskChannel) -> Result<(), anyhow::Error>;
+    fn run(
+        &mut self,
+        inputs: Vec<Record>,
+        tx: TaskChannel,
+        meta_tx: MetaTaskChannel,
+    ) -> Result<(), anyhow::Error>;
 
     fn cleanup(&mut self) -> Result<(), anyhow::Error> {
         Ok(())

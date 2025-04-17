@@ -1,3 +1,4 @@
 pub mod ardulink;
-pub mod system;
+pub mod auto;
 pub mod exec;
+pub mod system;

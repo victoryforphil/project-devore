@@ -1,9 +1,9 @@
-use log::{info, debug, warn};
+use log::{debug, info, warn};
 use mavlink::ardupilotmega::{EkfStatusFlags, MavMessage, EKF_STATUS_REPORT_DATA};
-use pubsub::{publish, subscribe, tasks::{
-    info::TaskInfo,
-    task::Task,
-}};
+use pubsub::{
+    publish, subscribe,
+    tasks::{info::TaskInfo, task::Task},
+};
 use std::time::{Duration, Instant};
 
 use crate::exec::{messages::ExecStageMessage, stage::ExecStage};
@@ -28,23 +28,22 @@ impl ExecTaskLockWatchdog {
             has_ekf_data: false,
         }
     }
-    
+
     /// Check if EKF has sufficient position lock
     fn check_ekf_lock(&self, ekf_status: &EKF_STATUS_REPORT_DATA) -> bool {
         // For lock, we need horizontal position (relative or absolute) in addition to attitude and velocity
-        let required_flags: EkfStatusFlags = 
-            EkfStatusFlags::EKF_ATTITUDE | 
-            EkfStatusFlags::EKF_VELOCITY_HORIZ | 
-            EkfStatusFlags::EKF_POS_HORIZ_REL | 
-            EkfStatusFlags::EKF_POS_HORIZ_ABS;
-        
+        let required_flags: EkfStatusFlags = EkfStatusFlags::EKF_ATTITUDE
+            | EkfStatusFlags::EKF_VELOCITY_HORIZ
+            | EkfStatusFlags::EKF_POS_HORIZ_REL
+            | EkfStatusFlags::EKF_POS_HORIZ_ABS;
+
         // Check if any of the horizontal position flags are set along with attitude and velocity
         let attitude_and_vel = EkfStatusFlags::EKF_ATTITUDE | EkfStatusFlags::EKF_VELOCITY_HORIZ;
         let horiz_pos = EkfStatusFlags::EKF_POS_HORIZ_REL | EkfStatusFlags::EKF_POS_HORIZ_ABS;
-        
+
         let has_attitude_and_vel = (ekf_status.flags & attitude_and_vel) == attitude_and_vel;
         let has_horiz_pos = (ekf_status.flags & horiz_pos).bits() > 0;
-        
+
         has_attitude_and_vel && has_horiz_pos
     }
 }
@@ -56,10 +55,10 @@ impl Task for ExecTaskLockWatchdog {
         _meta_tx: pubsub::tasks::task::MetaTaskChannel,
     ) -> Result<(), anyhow::Error> {
         info!("ExecTaskLockWatchdog initialized");
-        
+
         // Subscribe to the EKF status topics
         tx.send(subscribe!("mavlink/ekf_status_report"))?;
-        
+
         Ok(())
     }
 
@@ -76,23 +75,27 @@ impl Task for ExecTaskLockWatchdog {
     ) -> Result<(), anyhow::Error> {
         // Reset last check time
         self.last_check_time = Instant::now();
-        
+
         // Process input records
         for record in &inputs {
             if let Ok(topic) = record.try_get_topic() {
                 // Check EKF status reports
                 if topic == "mavlink/ekf_status_report" {
-                    let ekf_status: Vec<EKF_STATUS_REPORT_DATA> = record.to_serde().unwrap_or_default();
+                    let ekf_status: Vec<EKF_STATUS_REPORT_DATA> =
+                        record.to_serde().unwrap_or_default();
                     for status in ekf_status {
                         self.has_ekf_data = true;
                         let has_lock = self.check_ekf_lock(&status);
-                        
+
                         if has_lock && !self.has_lock {
                             info!("EKF lock achieved, updating exec stage to HealthyUnarmed");
                             self.has_lock = true;
-                            
+
                             // Publish stage update to exec/stage
-                            let pub_packet = publish!("exec/stage", &ExecStageMessage::new(ExecStage::HealthyUnarmed));
+                            let pub_packet = publish!(
+                                "exec/stage",
+                                &ExecStageMessage::new(ExecStage::HealthyUnarmed)
+                            );
                             tx.send(pub_packet)?;
                         } else if !has_lock && self.has_lock {
                             warn!("EKF lock lost");
@@ -102,7 +105,7 @@ impl Task for ExecTaskLockWatchdog {
                 }
             }
         }
-        
+
         Ok(())
     }
 
@@ -114,4 +117,4 @@ impl Task for ExecTaskLockWatchdog {
     fn get_task_info(&self) -> &pubsub::tasks::info::TaskInfo {
         &self.info
     }
-} 
+}

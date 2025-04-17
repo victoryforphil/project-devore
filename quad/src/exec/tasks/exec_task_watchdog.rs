@@ -1,9 +1,9 @@
-use log::{info, debug};
-use pubsub::{publish, publish_json, subscribe, tasks::{
-    info::TaskInfo,
-    task::Task,
-}};
-use serde::{Serialize, Deserialize};
+use log::{debug, info};
+use pubsub::{
+    publish, publish_json, subscribe,
+    tasks::{info::TaskInfo, task::Task},
+};
+use serde::{Deserialize, Serialize};
 
 use crate::exec::{messages::ExecStageMessage, stage::ExecStage};
 
@@ -34,10 +34,10 @@ impl Task for ExecTaskWatchdog {
         _meta_tx: pubsub::tasks::task::MetaTaskChannel,
     ) -> Result<(), anyhow::Error> {
         info!("ExecTaskWatchdog initialized");
-        
+
         // Subscribe to mavlink connection status
         tx.send(subscribe!("mavlink/connected"))?;
-        
+
         Ok(())
     }
 
@@ -60,22 +60,29 @@ impl Task for ExecTaskWatchdog {
                     if !status.is_empty() && status[0].connected && !self.connection_detected {
                         info!("Mavlink connection detected, updating exec stage to AwaitingData");
                         self.connection_detected = true;
-                        
+
                         // Publish stage update to exec/stage
-                        let pub_packet = publish!("exec/stage", &ExecStageMessage::new(ExecStage::AwaitingData));
+                        let pub_packet = publish!(
+                            "exec/stage",
+                            &ExecStageMessage::new(ExecStage::AwaitingData)
+                        );
                         tx.send(pub_packet)?;
-                    } else if !status.is_empty() && !status[0].connected && self.connection_detected {
+                    } else if !status.is_empty() && !status[0].connected && self.connection_detected
+                    {
                         info!("Mavlink connection lost, updating exec stage to AwaitConnection");
                         self.connection_detected = false;
-                        
+
                         // Publish stage update to exec/stage
-                        let pub_packet = publish!("exec/stage", &ExecStageMessage::new(ExecStage::AwaitConnection));
+                        let pub_packet = publish!(
+                            "exec/stage",
+                            &ExecStageMessage::new(ExecStage::AwaitConnection)
+                        );
                         tx.send(pub_packet)?;
                     }
                 }
             }
         }
-        
+
         Ok(())
     }
 

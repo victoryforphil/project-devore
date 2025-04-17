@@ -1,9 +1,9 @@
-use log::{info, debug, error};
+use log::{debug, error, info};
 use mavlink::ardupilotmega::{MavMessage, REQUEST_DATA_STREAM_DATA};
-use pubsub::{publish, publish_json, subscribe, tasks::{
-    info::TaskInfo,
-    task::Task,
-}};
+use pubsub::{
+    publish, publish_json, subscribe,
+    tasks::{info::TaskInfo, task::Task},
+};
 use std::time::Duration;
 
 /// Task that sends a MAVLink request data stream message once
@@ -19,7 +19,7 @@ impl ExecTaskRequestStream {
             has_run: false,
         }
     }
-    
+
     /// Create a message enabling data streaming
     fn build_request_stream() -> mavlink::ardupilotmega::MavMessage {
         mavlink::ardupilotmega::MavMessage::REQUEST_DATA_STREAM(
@@ -57,19 +57,19 @@ impl Task for ExecTaskRequestStream {
         _meta_tx: pubsub::tasks::task::MetaTaskChannel,
     ) -> Result<(), anyhow::Error> {
         debug!("ExecTaskRequestStream sending request stream message");
-        
+
         // Create request stream message
         let request_stream = Self::build_request_stream();
-        
+
         // Publish request stream to mavlink/send topic for ArdulinkConnection to transmit
         let pub_packet = publish!("mavlink/send/request_stream", &request_stream);
         if let Err(e) = tx.send(pub_packet) {
             error!("Failed to send request stream message: {}", e);
         }
-        
+
         // Mark as run so it doesn't run again
         self.has_run = true;
-        
+
         info!("ExecTaskRequestStream has requested data streams");
         Ok(())
     }
@@ -82,4 +82,4 @@ impl Task for ExecTaskRequestStream {
     fn get_task_info(&self) -> &pubsub::tasks::info::TaskInfo {
         &self.info
     }
-} 
+}

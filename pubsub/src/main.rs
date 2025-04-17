@@ -1,10 +1,10 @@
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
-use tasks::runner::Runner;
-use tasks::task::Task;
 use tasks::info::TaskInfo;
+use tasks::runner::Runner;
 use tasks::task::MetaTaskChannel;
+use tasks::task::Task;
 
 use log::info;
 
@@ -27,7 +27,11 @@ pub struct TestTaskTalker {
     task_info: TaskInfo,
 }
 impl Task for TestTaskTalker {
-    fn init(&mut self, tx: tasks::task::TaskChannel, meta_tx: MetaTaskChannel) -> Result<(), anyhow::Error> {
+    fn init(
+        &mut self,
+        tx: tasks::task::TaskChannel,
+        meta_tx: MetaTaskChannel,
+    ) -> Result<(), anyhow::Error> {
         info!("TestTaskTalker initialized");
         Ok(())
     }
@@ -54,11 +58,11 @@ impl Task for TestTaskTalker {
         tx.send(pub_packet)?;
         Ok(())
     }
-    
+
     fn cleanup(&mut self) -> Result<(), anyhow::Error> {
         Ok(())
     }
-    
+
     fn get_task_info(&self) -> &TaskInfo {
         &self.task_info
     }
@@ -68,7 +72,11 @@ pub struct TestTaskListener {
     task_info: TaskInfo,
 }
 impl Task for TestTaskListener {
-    fn init(&mut self, tx: tasks::task::TaskChannel, meta_tx: MetaTaskChannel) -> Result<(), anyhow::Error> {
+    fn init(
+        &mut self,
+        tx: tasks::task::TaskChannel,
+        meta_tx: MetaTaskChannel,
+    ) -> Result<(), anyhow::Error> {
         info!("TestTaskListener initialized");
         tx.send(subscribe!("test_*"))?;
         Ok(())
@@ -100,11 +108,11 @@ impl Task for TestTaskListener {
 
         Ok(())
     }
-    
+
     fn cleanup(&mut self) -> Result<(), anyhow::Error> {
         Ok(())
     }
-    
+
     fn get_task_info(&self) -> &TaskInfo {
         &self.task_info
     }
@@ -113,7 +121,7 @@ impl Task for TestTaskListener {
 fn main() {
     pretty_env_logger::init();
     let mut runner = Runner::new();
-    runner.add_task(Arc::new(Mutex::new(TestTaskTalker { 
+    runner.add_task(Arc::new(Mutex::new(TestTaskTalker {
         value: 0,
         task_info: TaskInfo::new("TestTaskTalker"),
     })));

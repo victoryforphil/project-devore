@@ -53,7 +53,7 @@ impl ArdulinkConnection {
         let transmit_channels = self.transmit_channels.clone();
         let should_stop = self.should_stop.clone();
         let connection_type = self.connection_type.clone();
-        
+
         let thread_handle = thread::spawn(move || {
             if let Err(e) = Self::start_thread_inner(
                 con_string.clone(),
@@ -77,10 +77,10 @@ impl ArdulinkConnection {
     pub fn stop_thread(&mut self) -> Result<(), ArdulinkError> {
         info!("ArduLink => Stopping connection threads");
         self.should_stop.store(true, Ordering::SeqCst);
-        
+
         // Wait a bit for threads to notice the stop flag
         thread::sleep(Duration::from_millis(100));
-        
+
         // Join all threads
         let handles = std::mem::take(&mut self.thread_handles);
         for handle in handles {
@@ -88,7 +88,7 @@ impl ArdulinkConnection {
                 error!("ArduLink => Error joining thread: {:?}", e);
             }
         }
-        
+
         info!("ArduLink => All threads stopped");
         Ok(())
     }
@@ -105,8 +105,8 @@ impl ArdulinkConnection {
             "ArduLink => Connecting to MAVLink with connection string: {}",
             con_string
         );
-        
-        let mut mav_con: Box<dyn mavlink::MavConnection<MavlinkMessageType> + Send + Sync> = 
+
+        let mut mav_con: Box<dyn mavlink::MavConnection<MavlinkMessageType> + Send + Sync> =
             mavlink::connect::<MavlinkMessageType>(&con_string)
                 .map_err(|e| ArdulinkError::ConnectionError(e.into()))?;
 
@@ -114,7 +114,7 @@ impl ArdulinkConnection {
         mav_con.set_protocol_version(mavlink::MavlinkVersion::V2);
 
         // Request streams now handled by ExecTaskRequestStream
-        
+
         let mav_con = Arc::new(mav_con);
 
         info!("ArduLink => Starting main threads...");
@@ -163,15 +163,18 @@ impl ArdulinkConnection {
                     if should_stop.load(Ordering::SeqCst) {
                         break;
                     }
-                    
+
                     // Use standard receive with a timeout by checking the flag frequently
                     let recv_result = vehicle.recv();
-                    
+
                     match recv_result {
                         Ok((_header, msg)) => {
                             let (recv_tx, _) = &recv_channels;
                             if let Err(e) = recv_tx.send(msg) {
-                                error!("ArduLink => Failed to send received message to channel: {:?}", e);
+                                error!(
+                                    "ArduLink => Failed to send received message to channel: {:?}",
+                                    e
+                                );
                                 if should_stop.load(Ordering::SeqCst) {
                                     break;
                                 }
@@ -190,7 +193,7 @@ impl ArdulinkConnection {
                         // Messages that didn't get through due to parser errors are ignored
                         _ => {}
                     }
-                    
+
                     // Check stop flag more frequently
                     if should_stop.load(Ordering::SeqCst) {
                         break;
@@ -199,11 +202,11 @@ impl ArdulinkConnection {
                 debug!("ArduLink => Receive thread exiting");
             }
         });
-        
+
         // Join threads when one exits or stop is requested
         let _ = send_handle.join();
         let _ = receive_handle.join();
-        
+
         info!("ArduLink => All threads exited");
         Ok(())
     }
@@ -213,7 +216,7 @@ impl ArdulinkConnection {
         if self.should_stop.load(Ordering::SeqCst) {
             return Ok(());
         }
-        
+
         let (tx, _) = &self.transmit_channels;
         tx.send(msg.clone())
             .map_err(ArdulinkError::ChannelSendError)
@@ -222,12 +225,12 @@ impl ArdulinkConnection {
     pub fn recv(&self) -> Result<Vec<MavlinkMessageType>, ArdulinkError> {
         let mut data = Vec::new();
         let (_, rx) = &self.recv_channels;
-        
+
         // Don't attempt to receive if we're stopping
         if self.should_stop.load(Ordering::SeqCst) {
             return Ok(data);
         }
-        
+
         while let Ok(msg) = rx.try_recv() {
             data.push(msg);
         }

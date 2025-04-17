@@ -29,9 +29,7 @@
     - SendArm
     - ArmWatchdog
   - HealthyArmed
-    - ArmedIdle
-  - HealthyGuided
-    - ControlArmed
+    - StartAuto
   - Unhealthy
     - ErrorTask
   - Fatal

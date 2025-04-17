@@ -1,9 +1,9 @@
-use log::{info, debug};
-use pubsub::{publish, subscribe, tasks::{
-    info::TaskInfo,
-    task::Task,
-}};
-use serde::{Serialize, Deserialize};
+use log::{debug, info};
+use pubsub::{
+    publish, subscribe,
+    tasks::{info::TaskInfo, task::Task},
+};
+use serde::{Deserialize, Serialize};
 
 use crate::exec::{messages::ExecStageMessage, stage::ExecStage};
 
@@ -29,10 +29,10 @@ impl Task for ExecTaskDataWatchdog {
         _meta_tx: pubsub::tasks::task::MetaTaskChannel,
     ) -> Result<(), anyhow::Error> {
         info!("ExecTaskDataWatchdog initialized");
-        
+
         // Subscribe to mavlink system status
         tx.send(subscribe!("mavlink/sys_status"))?;
-        
+
         Ok(())
     }
 
@@ -51,7 +51,7 @@ impl Task for ExecTaskDataWatchdog {
             // We've already detected data and promoted, no need to check again
             return Ok(());
         }
-        
+
         for record in &inputs {
             if let Ok(topic) = record.try_get_topic() {
                 if topic == "mavlink/sys_status" {
@@ -59,18 +59,21 @@ impl Task for ExecTaskDataWatchdog {
                     if !self.data_received {
                         info!("Mavlink system status data detected, updating exec stage to AwaitingHealthy");
                         self.data_received = true;
-                        
+
                         // Publish stage update to exec/stage
-                        let pub_packet = publish!("exec/stage", &ExecStageMessage::new(ExecStage::AwaitingHealthy));
+                        let pub_packet = publish!(
+                            "exec/stage",
+                            &ExecStageMessage::new(ExecStage::AwaitingHealthy)
+                        );
                         tx.send(pub_packet)?;
-                        
+
                         // We found what we're looking for, can break out of the loop
                         break;
                     }
                 }
             }
         }
-        
+
         Ok(())
     }
 
@@ -82,4 +85,4 @@ impl Task for ExecTaskDataWatchdog {
     fn get_task_info(&self) -> &pubsub::tasks::info::TaskInfo {
         &self.info
     }
-} 
+}

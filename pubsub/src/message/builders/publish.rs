@@ -7,7 +7,7 @@ pub struct PublishBuilder {
     topic: String,
     task_id: u32,
     task_name: String,
-    content: Option< Record>,
+    content: Option<Record>,
 }
 
 impl PublishBuilder {
@@ -45,13 +45,13 @@ impl PublishBuilder {
 
 impl RecordBuilder for PublishBuilder {
     fn build(self) -> Record {
-        let mut record = if let Some( content) = self.content {
+        let mut record = if let Some(content) = self.content {
             content
         } else {
             // Create an empty record if no content was provided
             Record::from_serde(&()).unwrap()
         };
-        
+
         record.set_flag(RecordFlag::PublishPacket).unwrap();
         record.set_topic(self.topic).unwrap();
         record
@@ -69,16 +69,16 @@ impl RecordBuilder for PublishBuilder {
 /// ```
 #[macro_export]
 macro_rules! publish {
-    ($topic:expr, $content:expr) => {
-        {
-            use $crate::message::builders::publish::PublishBuilder;
-            use $crate::message::builders::RecordBuilder;
-            
-            let builder = PublishBuilder::new($topic.to_string())
-                .with_serde_content($content).unwrap().build();
-            builder
-        }
-    };
+    ($topic:expr, $content:expr) => {{
+        use $crate::message::builders::publish::PublishBuilder;
+        use $crate::message::builders::RecordBuilder;
+
+        let builder = PublishBuilder::new($topic.to_string())
+            .with_serde_content($content)
+            .unwrap()
+            .build();
+        builder
+    }};
 }
 
 /// A macro to easily create a PublishBuilder from a topic and JSON content.
@@ -92,18 +92,17 @@ macro_rules! publish {
 /// ```
 #[macro_export]
 macro_rules! publish_json {
-    ($topic:expr, $json_content:expr) => {
-        {
-            use $crate::message::builders::publish::PublishBuilder;
-            use $crate::message::builders::RecordBuilder;
-            
-            let builder = PublishBuilder::new($topic.to_string())
-                .with_json_content($json_content).unwrap().build();
-            builder
-        }
-    };
-}
+    ($topic:expr, $json_content:expr) => {{
+        use $crate::message::builders::publish::PublishBuilder;
+        use $crate::message::builders::RecordBuilder;
 
+        let builder = PublishBuilder::new($topic.to_string())
+            .with_json_content($json_content)
+            .unwrap()
+            .build();
+        builder
+    }};
+}
 
 /// A macro to create a PublishBuilder with additional task information.
 ///
@@ -116,34 +115,34 @@ macro_rules! publish_json {
 /// ```
 #[macro_export]
 macro_rules! publish_with_info {
-    ($topic:expr, $content:expr, $task_id:expr) => {
-        {
-            use $crate::message::builders::publish::PublishBuilder;
-            use $crate::message::builders::RecordBuilder;
-            let builder = PublishBuilder::new($topic.to_string())
-                .with_task_id($task_id)
-                .with_serde_content($content).unwrap().build();
-            builder
-        }
-    };
-    ($topic:expr, $content:expr, $task_id:expr, $task_name:expr) => {
-        {
-            use $crate::message::builders::publish::PublishBuilder;
-            use $crate::message::builders::RecordBuilder;
-            
-            let builder = PublishBuilder::new($topic.to_string())
-                .with_task_id($task_id)
-                .with_task_name($task_name.to_string())
-                .with_serde_content($content).unwrap().build();
-            builder
-        }
-    };
+    ($topic:expr, $content:expr, $task_id:expr) => {{
+        use $crate::message::builders::publish::PublishBuilder;
+        use $crate::message::builders::RecordBuilder;
+        let builder = PublishBuilder::new($topic.to_string())
+            .with_task_id($task_id)
+            .with_serde_content($content)
+            .unwrap()
+            .build();
+        builder
+    }};
+    ($topic:expr, $content:expr, $task_id:expr, $task_name:expr) => {{
+        use $crate::message::builders::publish::PublishBuilder;
+        use $crate::message::builders::RecordBuilder;
+
+        let builder = PublishBuilder::new($topic.to_string())
+            .with_task_id($task_id)
+            .with_task_name($task_name.to_string())
+            .with_serde_content($content)
+            .unwrap()
+            .build();
+        builder
+    }};
 }
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde::{Deserialize, Serialize};
     use crate::message::builders::RecordBuilder;
+    use serde::{Deserialize, Serialize};
     #[derive(Serialize, Deserialize, Debug, Default)]
     struct TestStruct {
         pub id: i32,
@@ -153,10 +152,10 @@ mod tests {
     #[test]
     fn test_publish_macro() {
         let test_struct = TestStruct::default();
-        
+
         // Basic usage
         let record = publish!("test_topic", &test_struct);
-    
+
         assert_eq!(record.try_get_topic().unwrap(), "test_topic");
         assert_eq!(record.get_flag().unwrap(), RecordFlag::PublishPacket);
     }
@@ -164,12 +163,12 @@ mod tests {
     #[test]
     fn test_publish_with_info() {
         let test_struct = TestStruct::default();
-        
+
         // With task_id
         let record = publish_with_info!("test_topic", &test_struct, 42);
         assert_eq!(record.try_get_topic().unwrap(), "test_topic");
         assert_eq!(record.get_flag().unwrap(), RecordFlag::PublishPacket);
-        
+
         // With task_id and task_name
         let record = publish_with_info!("test_topic", &test_struct, 42, "my_task");
         assert_eq!(record.try_get_topic().unwrap(), "test_topic");

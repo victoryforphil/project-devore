@@ -1,4 +1,4 @@
-use core::task;
+pub use core::task;
 
 use log::info;
 use pubsub::{
@@ -10,43 +10,37 @@ use pubsub::{
     },
 };
 
-use super::{exec_config::ExecConfig, messages::ExecStageMessage, stage::ExecStage};
+use super::{auto_config::AutoConfig, auto_stage::AutoStage, message::AutoStageMessage};
 
-pub struct ExecRunner {
-    pub config: ExecConfig,
-    pub stage: ExecStage,
+pub struct AutoRunner {
+    pub config: AutoConfig,
+    pub stage: AutoStage,
     spawned_tasks: Vec<TaskInfo>,
     info: TaskInfo,
 }
 
-impl ExecRunner {
-    pub fn new(config: ExecConfig) -> Self {
+impl AutoRunner {
+    pub fn new(config: AutoConfig) -> Self {
         Self {
             config,
-            stage: ExecStage::AwaitConnection,
+            stage: AutoStage::AutoShadow, // Start in shadow mode as per README
             spawned_tasks: vec![],
-            info: TaskInfo::new("ExecRunner").with_insta_spawn(),
+            info: TaskInfo::new("AutoRunner").with_insta_spawn(),
         }
     }
 }
 
-impl Task for ExecRunner {
+impl Task for AutoRunner {
     fn init(
         &mut self,
         tx: pubsub::tasks::task::TaskChannel,
         meta_tx: pubsub::tasks::task::MetaTaskChannel,
     ) -> Result<(), anyhow::Error> {
-        // Spawn default tasks
-        for task_name in self.config.default_tasks.iter() {
-            info!("Spawning default task: {}", task_name);
-            let task_config = TaskInfo::new(task_name.clone()).with_insta_spawn();
-            self.spawned_tasks.push(task_config.clone());
-            let new_task_packet = MetaMessage::new(MetaCommand::SpawnTask, task_config);
-            meta_tx.send(new_task_packet)?;
-        }
+        // No default tasks to spawn in auto mode
+        // We start in shadow mode and wait for external command
 
-        // Subscribe to exec/stage
-        tx.send(subscribe!("exec/stage"))?;
+        // Subscribe to auto/stage
+        tx.send(subscribe!("auto/stage"))?;
 
         Ok(())
     }
@@ -61,13 +55,13 @@ impl Task for ExecRunner {
         tx: pubsub::tasks::task::TaskChannel,
         meta_tx: pubsub::tasks::task::MetaTaskChannel,
     ) -> Result<(), anyhow::Error> {
-        // Check for any new exec/stage messages
+        // Check for any new auto/stage messages
         for record in &inputs {
             if let Ok(topic) = record.try_get_topic() {
-                if topic.starts_with("exec/stage") {
-                    let stage: Vec<ExecStageMessage> = record.to_serde().unwrap();
+                if topic.starts_with("auto/stage") {
+                    let stage: Vec<AutoStageMessage> = record.to_serde().unwrap();
                     for s in stage {
-                        info!("Received exec/stage update: {}", s.stage);
+                        info!("Received auto/stage update: {}", s.stage);
                         self.stage = s.stage;
                     }
                 }
@@ -95,11 +89,11 @@ impl Task for ExecRunner {
         let mut tasks_to_spawn = Vec::new();
         let mut tasks_to_kill = Vec::new();
 
-        // Combine desired tasks with default tasks
+        // Handle script task separately if we're in AutoStart stage
         let mut effective_tasks = desired_tasks.clone();
-        for default_task in &self.config.default_tasks {
-            if !effective_tasks.contains(default_task) {
-                effective_tasks.push(default_task.clone());
+        if self.stage == AutoStage::AutoStart && !self.config.script_task_name.is_empty() {
+            if !effective_tasks.contains(&self.config.script_task_name) {
+                effective_tasks.push(self.config.script_task_name.clone());
             }
         }
 
@@ -137,6 +131,13 @@ impl Task for ExecRunner {
                 self.spawned_tasks.remove(position);
             }
         }
+
+        // TODO: Implement stage transition logic
+        // - AutoShadow -> AutoStart (external command)
+        // - AutoStart -> AutoTakeoff (when script completes)
+        // - AutoTakeoff -> AutoHover (when takeoff complete)
+        // - AutoHover -> AutoGuided (via GuidedInit task)
+        // - AutoGuided -> AutoLand (via ListenForLand task)
 
         Ok(())
     }

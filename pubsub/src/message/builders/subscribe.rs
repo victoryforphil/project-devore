@@ -3,7 +3,6 @@ use serde::Serialize;
 
 use super::RecordBuilder;
 
-
 pub struct SubscribeBuilder {
     packet: SubscribePacket,
 }
@@ -15,7 +14,13 @@ pub struct SubscribePacket {
 }
 impl SubscribeBuilder {
     pub fn new(topic: String) -> Self {
-        Self { packet: SubscribePacket { topic, task_id: 0, task_name: "unset".to_string() } }
+        Self {
+            packet: SubscribePacket {
+                topic,
+                task_id: 0,
+                task_name: "unset".to_string(),
+            },
+        }
     }
 
     pub fn with_task_id(mut self, task_id: u32) -> Self {
@@ -48,36 +53,29 @@ impl RecordBuilder for SubscribeBuilder {
 /// ```
 #[macro_export]
 macro_rules! subscribe {
-    ($topic:expr) => {
-        {
-            use $crate::message::builders::subscribe::SubscribeBuilder;
-            use $crate::message::builders::RecordBuilder;
-            
-            let builder = SubscribeBuilder::new($topic.to_string());
-            builder.build()
-        }
-    };
-    ($topic:expr,$task_id:expr) => {
-        {
-            use $crate::message::builders::subscribe::SubscribeBuilder;
-            use $crate::message::builders::RecordBuilder;
-            
-            let builder = SubscribeBuilder::new($topic.to_string())
-                .with_task_id($task_id);
-            builder.build()
-        }
-    };
-    ($topic:expr,$task_id:expr, $task_name:expr) => {
-        {
-            use $crate::message::builders::subscribe::SubscribeBuilder;
-            use $crate::message::builders::RecordBuilder;
-            
-            let builder = SubscribeBuilder::new($topic.to_string())
-                .with_task_id($task_id)
-                .with_task_name($task_name.to_string());
-            builder.build()
-        }
-    };
+    ($topic:expr) => {{
+        use $crate::message::builders::subscribe::SubscribeBuilder;
+        use $crate::message::builders::RecordBuilder;
+
+        let builder = SubscribeBuilder::new($topic.to_string());
+        builder.build()
+    }};
+    ($topic:expr,$task_id:expr) => {{
+        use $crate::message::builders::subscribe::SubscribeBuilder;
+        use $crate::message::builders::RecordBuilder;
+
+        let builder = SubscribeBuilder::new($topic.to_string()).with_task_id($task_id);
+        builder.build()
+    }};
+    ($topic:expr,$task_id:expr, $task_name:expr) => {{
+        use $crate::message::builders::subscribe::SubscribeBuilder;
+        use $crate::message::builders::RecordBuilder;
+
+        let builder = SubscribeBuilder::new($topic.to_string())
+            .with_task_id($task_id)
+            .with_task_name($task_name.to_string());
+        builder.build()
+    }};
 }
 
 #[cfg(test)]
@@ -94,17 +92,17 @@ mod tests {
     #[test]
     fn test_subscribe_macro() {
         let test_struct = TestStruct::default();
-        
+
         // Basic usage
         let record = subscribe!("test_topic", 42);
         assert_eq!(record.try_get_topic().unwrap(), "test_topic");
         assert_eq!(record.get_flag().unwrap(), RecordFlag::SubscribePacket);
-        
+
         // With task_id
         let record = subscribe!("test_topic", 42);
         assert_eq!(record.try_get_topic().unwrap(), "test_topic");
         assert_eq!(record.get_flag().unwrap(), RecordFlag::SubscribePacket);
-        
+
         // With task_id and task_name
         let record = subscribe!("test_topic", 42, "my_task");
         assert_eq!(record.try_get_topic().unwrap(), "test_topic");

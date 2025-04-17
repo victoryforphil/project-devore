@@ -7,7 +7,6 @@ pub struct TaskInfo {
     pub insta_spawn: bool,
 }
 
-
 impl TaskInfo {
     pub fn new(name: impl Into<String>) -> Self {
         // id is a hash of the name
@@ -33,7 +32,6 @@ impl std::hash::Hash for TaskInfo {
         self.id.hash(state);
     }
 }
-
 
 // eq based off the id
 impl std::cmp::PartialEq for TaskInfo {

@@ -5,9 +5,9 @@ use arrow::json::reader::ReaderBuilder;
 use serde::de::DeserializeOwned;
 use serde_json::to_value;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::collections::HashSet;
 
 /// Path separator for flattened field names
 const PATH_SEPARATOR: &str = ".";
@@ -39,7 +39,8 @@ fn flatten_struct_column(
                 flattened_columns.extend(sub_flattened);
             }
             _ => {
-                let new_field = Field::new(&col_name, field.data_type().clone(), field.is_nullable());
+                let new_field =
+                    Field::new(&col_name, field.data_type().clone(), field.is_nullable());
                 flattened_columns.push((new_field, column.clone()));
             }
         }
@@ -90,7 +91,12 @@ pub fn flatten_record_batch(batch: &RecordBatch) -> Result<RecordBatch, anyhow::
 /// and reconstructs the nested structure based on the field path separators.
 pub fn unflatten_record_batch(batch: &RecordBatch) -> Result<RecordBatch, anyhow::Error> {
     // If there are no fields with path separators, the batch is already unflattened
-    if !batch.schema().fields().iter().any(|f| f.name().contains(PATH_SEPARATOR)) {
+    if !batch
+        .schema()
+        .fields()
+        .iter()
+        .any(|f| f.name().contains(PATH_SEPARATOR))
+    {
         return Ok(batch.clone());
     }
 
@@ -106,23 +112,24 @@ pub fn unflatten_record_batch(batch: &RecordBatch) -> Result<RecordBatch, anyhow
     // First, categorize each field
     for (i, field) in flattened_fields.iter().enumerate() {
         let field_name = field.name();
-        
+
         if field_name.contains(PATH_SEPARATOR) {
             // This is a nested field that needs to be grouped
             let parts: Vec<&str> = field_name.split(PATH_SEPARATOR).collect();
             let root = parts[0].to_string();
-            
+
             // Get the field name without the root prefix
             let local_name = if parts.len() > 1 {
                 parts[1..].join(PATH_SEPARATOR)
             } else {
                 parts[0].to_string()
             };
-            
-            field_groups
-                .entry(root)
-                .or_default()
-                .push((local_name, field.clone(), flattened_data[i].clone()));
+
+            field_groups.entry(root).or_default().push((
+                local_name,
+                field.clone(),
+                flattened_data[i].clone(),
+            ));
         } else {
             // This is a top-level field that stays as is
             top_level_fields.push(field.clone());
@@ -133,46 +140,44 @@ pub fn unflatten_record_batch(batch: &RecordBatch) -> Result<RecordBatch, anyhow
     // Helper function to recursively build struct arrays for nested fields
     fn build_nested_struct(
         fields: &[(String, Arc<Field>, ArrayRef)],
-        num_rows: usize
+        num_rows: usize,
     ) -> Result<(Vec<Arc<Field>>, Vec<ArrayRef>), anyhow::Error> {
         // Group fields by their root (first part before a separator)
         let mut field_groups: HashMap<String, Vec<(String, Arc<Field>, ArrayRef)>> = HashMap::new();
         let mut direct_fields = Vec::new();
         let mut direct_arrays = Vec::new();
-        
+
         for (name, field, array) in fields {
             if name.contains(PATH_SEPARATOR) {
                 // This field needs further nesting
                 let parts: Vec<&str> = name.split(PATH_SEPARATOR).collect();
                 let root = parts[0].to_string();
-                
+
                 // Get the field name without the root prefix
                 let local_name = if parts.len() > 1 {
                     parts[1..].join(PATH_SEPARATOR)
                 } else {
                     parts[0].to_string()
                 };
-                
-                field_groups
-                    .entry(root)
-                    .or_default()
-                    .push((local_name, field.clone(), array.clone()));
+
+                field_groups.entry(root).or_default().push((
+                    local_name,
+                    field.clone(),
+                    array.clone(),
+                ));
             } else {
                 // This is a direct field at this level
-                let field_without_prefix = Field::new(
-                    name,
-                    field.data_type().clone(),
-                    field.is_nullable(),
-                );
+                let field_without_prefix =
+                    Field::new(name, field.data_type().clone(), field.is_nullable());
                 direct_fields.push(Arc::new(field_without_prefix));
                 direct_arrays.push(array.clone());
             }
         }
-        
+
         // Process nested struct fields recursively
         for (struct_name, struct_fields) in field_groups {
             let (nested_fields, nested_arrays) = build_nested_struct(&struct_fields, num_rows)?;
-            
+
             // Create a nested struct field
             let nested_field_type = DataType::Struct(Fields::from(nested_fields.clone()));
             let nested_field = Field::new(
@@ -180,18 +185,18 @@ pub fn unflatten_record_batch(batch: &RecordBatch) -> Result<RecordBatch, anyhow
                 nested_field_type.clone(),
                 true, // Usually struct fields can be nullable
             );
-            
+
             // Create the struct array
             let struct_array = StructArray::try_new(
                 Fields::from(nested_fields),
                 nested_arrays,
                 None, // No validity bitmap for the struct itself
             )?;
-            
+
             direct_fields.push(Arc::new(nested_field));
             direct_arrays.push(Arc::new(struct_array) as ArrayRef);
         }
-        
+
         Ok((direct_fields, direct_arrays))
     }
 
@@ -201,7 +206,7 @@ pub fn unflatten_record_batch(batch: &RecordBatch) -> Result<RecordBatch, anyhow
 
     for (struct_name, fields) in field_groups {
         let (struct_fields, struct_arrays) = build_nested_struct(&fields, num_rows)?;
-        
+
         // Create the struct field at top level
         let field_type = DataType::Struct(Fields::from(struct_fields.clone()));
         let struct_field = Field::new(
@@ -209,14 +214,14 @@ pub fn unflatten_record_batch(batch: &RecordBatch) -> Result<RecordBatch, anyhow
             field_type,
             true, // Usually struct fields can be nullable
         );
-        
+
         // Create the struct array
         let struct_array = StructArray::try_new(
             Fields::from(struct_fields),
             struct_arrays,
             None, // No validity bitmap for the struct itself
         )?;
-        
+
         unflattened_fields.push(Arc::new(struct_field));
         unflattened_data.push(Arc::new(struct_array) as ArrayRef);
     }
@@ -225,7 +230,10 @@ pub fn unflatten_record_batch(batch: &RecordBatch) -> Result<RecordBatch, anyhow
     eprintln!(
         "Unflattened schema has {} fields: {:?}",
         unflattened_fields.len(),
-        unflattened_fields.iter().map(|f| f.name()).collect::<Vec<_>>()
+        unflattened_fields
+            .iter()
+            .map(|f| f.name())
+            .collect::<Vec<_>>()
     );
 
     // Create a new schema with unflattened fields
@@ -316,7 +324,7 @@ impl Record {
     }
 
     /// Creates a Record from a JSON string
-    /// 
+    ///
     /// This method parses a JSON string and creates a Record from it.
     /// The schema is inferred from the JSON data.
     pub fn from_json(json_str: &str) -> Result<Self, anyhow::Error> {
@@ -583,8 +591,22 @@ mod tests {
 
         // Create data for testing
         let data = vec![
-            Outer { id: 1, inner: Inner { a: 10, b: "hello".to_string() }, value: 1.1 },
-            Outer { id: 2, inner: Inner { a: 20, b: "world".to_string() }, value: 2.2 },
+            Outer {
+                id: 1,
+                inner: Inner {
+                    a: 10,
+                    b: "hello".to_string(),
+                },
+                value: 1.1,
+            },
+            Outer {
+                id: 2,
+                inner: Inner {
+                    a: 20,
+                    b: "world".to_string(),
+                },
+                value: 2.2,
+            },
         ];
 
         // Create schema manually for the test
@@ -592,22 +614,22 @@ mod tests {
             Arc::new(Field::new("a", DataType::Int64, true)),
             Arc::new(Field::new("b", DataType::Utf8, true)),
         ]);
-        
+
         // Create the original RecordBatch with struct data
         let schema = Arc::new(Schema::new(vec![
             Field::new("id", DataType::Int64, false),
             Field::new("inner", DataType::Struct(inner_fields), true),
             Field::new("value", DataType::Float64, false),
         ]));
-        
+
         // Create arrays for the data
         let id_array = Arc::new(arrow::array::Int64Array::from(vec![1, 2]));
         let value_array = Arc::new(Float64Array::from(vec![1.1, 2.2]));
-        
+
         // Create the inner struct arrays
         let inner_a_array = Arc::new(arrow::array::Int64Array::from(vec![10, 20]));
         let inner_b_array = Arc::new(StringArray::from(vec!["hello", "world"]));
-        
+
         let inner_struct = StructArray::try_new(
             Fields::from(vec![
                 Arc::new(Field::new("a", DataType::Int64, true)),
@@ -615,14 +637,14 @@ mod tests {
             ]),
             vec![inner_a_array, inner_b_array],
             None,
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         // Create the original batch with a struct column
-        let original_batch = RecordBatch::try_new(
-            schema,
-            vec![id_array, Arc::new(inner_struct), value_array],
-        ).unwrap();
-        
+        let original_batch =
+            RecordBatch::try_new(schema, vec![id_array, Arc::new(inner_struct), value_array])
+                .unwrap();
+
         // Now flatten it using our function
         let flattened_batch = flatten_record_batch(&original_batch).expect("Flattening failed");
 
@@ -634,32 +656,60 @@ mod tests {
         assert_eq!(field_names, vec!["id", "inner.a", "inner.b", "value"]);
 
         // Check data types
-        assert_eq!(schema.field_with_name("id").unwrap().data_type(), &DataType::Int64);
-        assert_eq!(schema.field_with_name("inner.a").unwrap().data_type(), &DataType::Int64);
-        assert_eq!(schema.field_with_name("inner.b").unwrap().data_type(), &DataType::Utf8);
-        assert_eq!(schema.field_with_name("value").unwrap().data_type(), &DataType::Float64);
+        assert_eq!(
+            schema.field_with_name("id").unwrap().data_type(),
+            &DataType::Int64
+        );
+        assert_eq!(
+            schema.field_with_name("inner.a").unwrap().data_type(),
+            &DataType::Int64
+        );
+        assert_eq!(
+            schema.field_with_name("inner.b").unwrap().data_type(),
+            &DataType::Utf8
+        );
+        assert_eq!(
+            schema.field_with_name("value").unwrap().data_type(),
+            &DataType::Float64
+        );
 
         // Check some values
-        let id_col = flattened_batch.column(0).as_any().downcast_ref::<arrow::array::Int64Array>().unwrap();
+        let id_col = flattened_batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<arrow::array::Int64Array>()
+            .unwrap();
         assert_eq!(id_col.value(0), 1);
         assert_eq!(id_col.value(1), 2);
 
-        let inner_a_col = flattened_batch.column(1).as_any().downcast_ref::<arrow::array::Int64Array>().unwrap();
+        let inner_a_col = flattened_batch
+            .column(1)
+            .as_any()
+            .downcast_ref::<arrow::array::Int64Array>()
+            .unwrap();
         assert_eq!(inner_a_col.value(0), 10);
         assert_eq!(inner_a_col.value(1), 20);
 
-        let inner_b_col = flattened_batch.column(2).as_any().downcast_ref::<StringArray>().unwrap();
+        let inner_b_col = flattened_batch
+            .column(2)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
         assert_eq!(inner_b_col.value(0), "hello");
         assert_eq!(inner_b_col.value(1), "world");
 
-        let value_col = flattened_batch.column(3).as_any().downcast_ref::<Float64Array>().unwrap();
+        let value_col = flattened_batch
+            .column(3)
+            .as_any()
+            .downcast_ref::<Float64Array>()
+            .unwrap();
         assert_eq!(value_col.value(0), 1.1);
         assert_eq!(value_col.value(1), 2.2);
     }
 
-     #[test]
+    #[test]
     fn test_flatten_record_batch_nested() {
-         #[derive(Serialize, Deserialize, Debug, Default, Clone)]
+        #[derive(Serialize, Deserialize, Debug, Default, Clone)]
         struct DeepInner {
             x: f64,
         }
@@ -668,59 +718,65 @@ mod tests {
             a: i32,
             deep: DeepInner,
         }
-       #[derive(Serialize, Deserialize, Debug, Default, Clone)]
+        #[derive(Serialize, Deserialize, Debug, Default, Clone)]
         struct Outer {
             id: i32,
             inner: Inner,
         }
 
         // Create schema with nested structs manually
-        let deep_inner_fields = Fields::from(vec![
-            Arc::new(Field::new("x", DataType::Float64, true)),
-        ]);
-        
+        let deep_inner_fields =
+            Fields::from(vec![Arc::new(Field::new("x", DataType::Float64, true))]);
+
         let inner_fields = Fields::from(vec![
             Arc::new(Field::new("a", DataType::Int64, true)),
-            Arc::new(Field::new("deep", DataType::Struct(deep_inner_fields), true)),
+            Arc::new(Field::new(
+                "deep",
+                DataType::Struct(deep_inner_fields),
+                true,
+            )),
         ]);
-        
+
         let schema = Arc::new(Schema::new(vec![
             Field::new("id", DataType::Int64, false),
             Field::new("inner", DataType::Struct(inner_fields), true),
         ]));
-        
+
         // Create arrays for the data
         let id_array = Arc::new(arrow::array::Int64Array::from(vec![1, 2]));
         let inner_a_array = Arc::new(arrow::array::Int64Array::from(vec![10, 20]));
-        
+
         // Create the deep inner struct
         let deep_x_array = Arc::new(Float64Array::from(vec![100.1, 200.2]));
         let deep_struct = StructArray::try_new(
-            Fields::from(vec![
-                Arc::new(Field::new("x", DataType::Float64, true)),
-            ]),
+            Fields::from(vec![Arc::new(Field::new("x", DataType::Float64, true))]),
             vec![deep_x_array],
             None,
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         // Create the inner struct with the deep struct inside
         let inner_struct = StructArray::try_new(
             Fields::from(vec![
                 Arc::new(Field::new("a", DataType::Int64, true)),
-                Arc::new(Field::new("deep", DataType::Struct(Fields::from(vec![
-                    Arc::new(Field::new("x", DataType::Float64, true)),
-                ])), true)),
+                Arc::new(Field::new(
+                    "deep",
+                    DataType::Struct(Fields::from(vec![Arc::new(Field::new(
+                        "x",
+                        DataType::Float64,
+                        true,
+                    ))])),
+                    true,
+                )),
             ]),
             vec![inner_a_array, Arc::new(deep_struct)],
             None,
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         // Create the batch with nested structs
-        let batch = RecordBatch::try_new(
-            schema,
-            vec![id_array, Arc::new(inner_struct)],
-        ).unwrap();
-        
+        let batch = RecordBatch::try_new(schema, vec![id_array, Arc::new(inner_struct)]).unwrap();
+
         // Now flatten it
         let flattened_batch = flatten_record_batch(&batch).expect("Flattening failed");
 
@@ -732,9 +788,18 @@ mod tests {
         assert_eq!(field_names, vec!["id", "inner.a", "inner.deep.x"]);
 
         // Check data types
-        assert_eq!(schema.field_with_name("id").unwrap().data_type(), &DataType::Int64);
-        assert_eq!(schema.field_with_name("inner.a").unwrap().data_type(), &DataType::Int64);
-        assert_eq!(schema.field_with_name("inner.deep.x").unwrap().data_type(), &DataType::Float64);
+        assert_eq!(
+            schema.field_with_name("id").unwrap().data_type(),
+            &DataType::Int64
+        );
+        assert_eq!(
+            schema.field_with_name("inner.a").unwrap().data_type(),
+            &DataType::Int64
+        );
+        assert_eq!(
+            schema.field_with_name("inner.deep.x").unwrap().data_type(),
+            &DataType::Float64
+        );
     }
 
     #[test]
@@ -775,10 +840,24 @@ mod tests {
 
         // Create sample data - not used directly but kept for reference
         let _data = vec![
-            Outer { id: 1, inner: Inner { a: 10, b: "hello".to_string() }, value: 1.1 },
-            Outer { id: 2, inner: Inner { a: 20, b: "world".to_string() }, value: 2.2 },
+            Outer {
+                id: 1,
+                inner: Inner {
+                    a: 10,
+                    b: "hello".to_string(),
+                },
+                value: 1.1,
+            },
+            Outer {
+                id: 2,
+                inner: Inner {
+                    a: 20,
+                    b: "world".to_string(),
+                },
+                value: 2.2,
+            },
         ];
-        
+
         // Create schema manually for the test
         let schema = Arc::new(Schema::new(vec![
             Field::new("id", DataType::Int64, false),
@@ -786,40 +865,58 @@ mod tests {
             Field::new("inner.b", DataType::Utf8, true),
             Field::new("value", DataType::Float64, false),
         ]));
-        
+
         // Create arrays for the flattened data
         let id_array = Arc::new(arrow::array::Int64Array::from(vec![1, 2]));
         let inner_a_array = Arc::new(arrow::array::Int64Array::from(vec![10, 20]));
         let inner_b_array = Arc::new(StringArray::from(vec!["hello", "world"]));
         let value_array = Arc::new(Float64Array::from(vec![1.1, 2.2]));
-        
+
         // Create the flattened RecordBatch
         let flattened_batch = RecordBatch::try_new(
             schema,
             vec![id_array, inner_a_array, inner_b_array, value_array],
-        ).expect("Failed to create flattened batch");
-        
+        )
+        .expect("Failed to create flattened batch");
+
         // Create a Record from the flattened batch
         let record = Record::from_record_batch(flattened_batch);
-        
+
         // Debug original record schema
-        println!("Original record schema: {:?}", record.to_record_batch().schema().fields());
-        
+        println!(
+            "Original record schema: {:?}",
+            record.to_record_batch().schema().fields()
+        );
+
         // Now unflatten it
-        let unflattened_batch = unflatten_record_batch(record.to_record_batch()).expect("Unflattening failed");
-        
+        let unflattened_batch =
+            unflatten_record_batch(record.to_record_batch()).expect("Unflattening failed");
+
         // Debug unflattened batch schema and columns
-        println!("Unflattened schema: {:?}", unflattened_batch.schema().fields());
-        println!("Unflattened num columns: {}", unflattened_batch.num_columns());
+        println!(
+            "Unflattened schema: {:?}",
+            unflattened_batch.schema().fields()
+        );
+        println!(
+            "Unflattened num columns: {}",
+            unflattened_batch.num_columns()
+        );
         println!("Unflattened columns: {:?}", unflattened_batch.columns());
-        
+
         // Check structure - unflatten should create 3 columns: id, inner, value
-        assert_eq!(unflattened_batch.num_columns(), 3, 
+        assert_eq!(
+            unflattened_batch.num_columns(),
+            3,
             "Expected 3 columns in unflattened batch, found {} columns: {:?}",
             unflattened_batch.num_columns(),
-            unflattened_batch.schema().fields().iter().map(|f| f.name()).collect::<Vec<_>>()
+            unflattened_batch
+                .schema()
+                .fields()
+                .iter()
+                .map(|f| f.name())
+                .collect::<Vec<_>>()
         );
-        
+
         // Check that inner is a struct
         let schema = unflattened_batch.schema();
         let inner_field = schema.field_with_name("inner").unwrap();
@@ -828,23 +925,41 @@ mod tests {
                 assert_eq!(fields.len(), 2);
                 assert!(fields.iter().any(|f| f.name() == "a"));
                 assert!(fields.iter().any(|f| f.name() == "b"));
-            },
+            }
             _ => panic!("Expected inner to be a struct"),
         }
-        
+
         // Verify we can round-trip from flattened -> unflattened -> flattened
-        let reflattened_batch = flatten_record_batch(&unflattened_batch).expect("Re-flattening failed");
-        
+        let reflattened_batch =
+            flatten_record_batch(&unflattened_batch).expect("Re-flattening failed");
+
         // Debug reflattened batch
-        println!("Reflattened schema: {:?}", reflattened_batch.schema().fields());
-        println!("Reflattened num columns: {}", reflattened_batch.num_columns());
-        
+        println!(
+            "Reflattened schema: {:?}",
+            reflattened_batch.schema().fields()
+        );
+        println!(
+            "Reflattened num columns: {}",
+            reflattened_batch.num_columns()
+        );
+
         // Should have the same columns as the original flattened batch
         assert_eq!(reflattened_batch.num_columns(), 4);
-        
+
         // Field names should match after round-trip (using sets because order might differ)
-        let original_names: HashSet<_> = record.to_record_batch().schema().fields().iter().map(|f| f.name().clone()).collect();
-        let round_trip_names: HashSet<_> = reflattened_batch.schema().fields().iter().map(|f| f.name().clone()).collect();
+        let original_names: HashSet<_> = record
+            .to_record_batch()
+            .schema()
+            .fields()
+            .iter()
+            .map(|f| f.name().clone())
+            .collect();
+        let round_trip_names: HashSet<_> = reflattened_batch
+            .schema()
+            .fields()
+            .iter()
+            .map(|f| f.name().clone())
+            .collect();
         assert_eq!(original_names, round_trip_names);
     }
 
@@ -871,30 +986,30 @@ mod tests {
             Field::new("inner.a", DataType::Int64, true),
             Field::new("inner.deep.x", DataType::Float64, true),
         ]));
-        
+
         // Create arrays for the flattened data
         let id_array = Arc::new(arrow::array::Int64Array::from(vec![1, 2]));
         let inner_a_array = Arc::new(arrow::array::Int64Array::from(vec![10, 20]));
         let inner_deep_x_array = Arc::new(Float64Array::from(vec![100.1, 200.2]));
-        
+
         // Create the flattened RecordBatch
-        let flattened_batch = RecordBatch::try_new(
-            schema,
-            vec![id_array, inner_a_array, inner_deep_x_array],
-        ).expect("Failed to create flattened batch");
-        
+        let flattened_batch =
+            RecordBatch::try_new(schema, vec![id_array, inner_a_array, inner_deep_x_array])
+                .expect("Failed to create flattened batch");
+
         // Create a Record from the flattened batch
         let record = Record::from_record_batch(flattened_batch);
-        
+
         // Check flattened structure
         assert_eq!(record.to_record_batch().num_columns(), 3);
-        
+
         // Now unflatten it
-        let unflattened_batch = unflatten_record_batch(record.to_record_batch()).expect("Unflattening failed");
-        
+        let unflattened_batch =
+            unflatten_record_batch(record.to_record_batch()).expect("Unflattening failed");
+
         // Check unflattened structure
         assert_eq!(unflattened_batch.num_columns(), 2); // id, inner
-        
+
         // Check that inner is a struct with nested struct
         let schema = unflattened_batch.schema();
         let inner_field = schema.field_with_name("inner").unwrap();
@@ -907,19 +1022,24 @@ mod tests {
                     DataType::Struct(deep_fields) => {
                         assert_eq!(deep_fields.len(), 1);
                         assert!(deep_fields.iter().any(|f| f.name() == "x"));
-                    },
+                    }
                     _ => panic!("Expected deep to be a struct"),
                 }
-            },
+            }
             _ => panic!("Expected inner to be a struct"),
         }
-        
+
         // Verify the record's flatten/unflatten methods work correctly
         let flattened_record = record.flatten().expect("Failed to flatten record");
-        let unflattened_record = flattened_record.unflatten().expect("Failed to unflatten record");
-        
+        let unflattened_record = flattened_record
+            .unflatten()
+            .expect("Failed to unflatten record");
+
         // The original batch has 3 columns, the unflattened should have 2 (id and inner)
-        assert_eq!(unflattened_record.to_record_batch().schema().fields().len(), 2);
+        assert_eq!(
+            unflattened_record.to_record_batch().schema().fields().len(),
+            2
+        );
     }
 
     #[test]
@@ -931,7 +1051,7 @@ mod tests {
             Field::new("nested.a", DataType::Int32, true),
             Field::new("nested.b", DataType::Utf8, true),
         ]));
-        
+
         let batch = RecordBatch::try_new(
             schema.clone(),
             vec![
@@ -940,13 +1060,14 @@ mod tests {
                 Arc::new(Int32Array::from(vec![10, 20])),
                 Arc::new(StringArray::from(vec![Some("nested_a"), Some("nested_b")])),
             ],
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         let unflattened_batch = unflatten_record_batch(&batch).expect("Unflattening failed");
-        
+
         // Check structure - should have 3 columns: id, regular_field, nested
         assert_eq!(unflattened_batch.num_columns(), 3);
-        
+
         // nested should be a struct with a and b fields
         let schema = unflattened_batch.schema();
         let nested_field = schema.field_with_name("nested").unwrap();
@@ -955,15 +1076,15 @@ mod tests {
                 assert_eq!(fields.len(), 2);
                 assert!(fields.iter().any(|f| f.name() == "a"));
                 assert!(fields.iter().any(|f| f.name() == "b"));
-            },
+            }
             _ => panic!("Expected nested to be a struct"),
         }
-        
+
         // Flattening it back should give us the original structure
-        let reflattened_batch = flatten_record_batch(&unflattened_batch).expect("Re-flattening failed");
+        let reflattened_batch =
+            flatten_record_batch(&unflattened_batch).expect("Re-flattening failed");
         assert_eq!(reflattened_batch.num_columns(), 4);
     }
 
     // Add more tests for edge cases like empty structs, lists of structs (should remain lists), etc.
 }
-
