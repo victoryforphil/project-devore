@@ -123,18 +123,18 @@ interface StringColumnData extends BaseColumnData {
 
 type ColumnData = NumericColumnData | StringColumnData
 
-// Define color palette for multiple columns
+// Define color palette for multiple columns (bright colors for dark background)
 const colorPalette = [
-  "hsl(var(--primary))",
-  "hsl(var(--chart-2))",
-  "hsl(var(--chart-3))",
-  "hsl(var(--chart-4))",
-  "hsl(var(--chart-5))",
-  "#ef4444", // red
-  "#f59e0b", // amber
-  "#10b981", // emerald
-  "#3b82f6", // blue
-  "#8b5cf6", // violet
+  "#00d9ff", // cyan (primary-like)
+  "#ff6b9d", // pink
+  "#fbbf24", // amber
+  "#34d399", // emerald
+  "#60a5fa", // blue
+  "#a78bfa", // purple
+  "#f87171", // red
+  "#fb923c", // orange
+  "#4ade80", // green
+  "#c084fc", // violet
 ]
 
 export function UavTelemetryPlot() {
