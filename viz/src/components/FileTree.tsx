@@ -61,7 +61,13 @@ export function FileTree({ metadata, onSelectColumn }: FileTreeProps) {
                 {file.columns.map((column) => (
                   <button
                     key={`${file.path}-${column.name}`}
-                    onClick={() => onSelectColumn(file.path, column.name)}
+                    onClick={() => {
+                      // Ensure file is expanded when clicking column
+                      if (!expandedFiles.has(file.path)) {
+                        setExpandedFiles(new Set(expandedFiles).add(file.path))
+                      }
+                      onSelectColumn(file.path, column.name)
+                    }}
                     className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-accent/50 transition-colors flex items-center gap-2 group"
                   >
                     <Columns3 className="h-3 w-3 flex-shrink-0 text-muted-foreground" />

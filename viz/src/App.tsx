@@ -1,5 +1,8 @@
 import { AppProvider } from "@/context/AppContext"
 import { FileSystemProvider } from "@/contexts/FileSystemContext"
+import { ParquetWasmProvider } from "@/contexts/ParquetWasmContext"
+import { DataSelectionProvider } from "@/contexts/DataSelectionContext"
+import { PlaybackProvider } from "@/contexts/PlaybackContext"
 import { Toolbar } from "@/components/Toolbar"
 import { Sidebar } from "@/components/Sidebar"
 import { Inspector } from "@/components/Inspector"
@@ -52,9 +55,15 @@ export default function App() {
 
   return (
     <AppProvider>
-      <FileSystemProvider>
-        <AppContent />
-      </FileSystemProvider>
+      <ParquetWasmProvider>
+        <FileSystemProvider>
+          <DataSelectionProvider>
+            <PlaybackProvider>
+              <AppContent />
+            </PlaybackProvider>
+          </DataSelectionProvider>
+        </FileSystemProvider>
+      </ParquetWasmProvider>
     </AppProvider>
   )
 }

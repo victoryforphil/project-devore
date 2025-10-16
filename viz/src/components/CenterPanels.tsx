@@ -1,4 +1,7 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { UavTelemetryPlot } from "@/components/plots/UavTelemetryPlot"
+import { Trajectory3DPlot } from "@/components/plots/Trajectory3DPlot"
+import { DataTablePanel } from "@/components/DataTable"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { BarChart3, Box, FileJson, MessageSquare } from "lucide-react"
 
@@ -38,36 +41,24 @@ export function CenterPanels() {
         </TabsList>
 
         {/* 2D Plots Tab */}
-        <TabsContent value="plot2d" className="flex-1 overflow-hidden">
-          <div className="h-full flex items-center justify-center bg-muted/30">
-            <div className="text-center space-y-2">
-              <BarChart3 className="h-12 w-12 mx-auto text-muted-foreground opacity-50" />
-              <p className="text-muted-foreground">2D Plot visualization goes here</p>
-            </div>
+        <TabsContent value="plot2d" className="flex-1 overflow-auto bg-muted/20 p-6">
+          <div className="h-full w-full">
+            <UavTelemetryPlot />
           </div>
         </TabsContent>
 
         {/* 3D Preview Tab */}
-        <TabsContent value="preview3d" className="flex-1 overflow-hidden">
-          <div className="h-full flex items-center justify-center bg-muted/30">
-            <div className="text-center space-y-2">
-              <Box className="h-12 w-12 mx-auto text-muted-foreground opacity-50" />
-              <p className="text-muted-foreground">3D Preview visualization goes here</p>
-            </div>
+        <TabsContent value="preview3d" className="flex-1 overflow-auto bg-muted/20 p-6">
+          <div className="h-full w-full">
+            <Trajectory3DPlot />
           </div>
         </TabsContent>
 
         {/* Data Table Tab */}
-        <TabsContent value="table" className="flex-1 overflow-hidden">
-          <ScrollArea className="h-full">
-            <div className="p-4">
-              <div className="space-y-2">
-                <div className="text-sm font-mono text-muted-foreground">
-                  {"{\n  \"timestamp\": 1234567890,\n  \"gps_lat\": 37.7749,\n  \"gps_lon\": -122.4194,\n  \"altitude\": 245.3,\n  \"speed\": 15.2\n}"}
-                </div>
-              </div>
-            </div>
-          </ScrollArea>
+        <TabsContent value="table" className="flex-1 overflow-hidden bg-muted/20">
+          <div className="h-full w-full">
+            <DataTablePanel />
+          </div>
         </TabsContent>
 
         {/* Logs Tab */}
