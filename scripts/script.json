@@ -1,5 +1,4 @@
 [
   [0.0, "auto/stage", "{\"stage\": \"AutoTakeoff\"}"],
   [0.5, "auto/takeoff", "{\"height\": 5.0}"]
-
 ]
