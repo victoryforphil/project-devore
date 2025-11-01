@@ -1,4 +1,3 @@
-import { AppProvider } from "@/context/AppContext"
 import { FileSystemProvider } from "@/contexts/FileSystemContext"
 import { ParquetWasmProvider } from "@/contexts/ParquetWasmContext"
 import { DataSelectionProvider } from "@/contexts/DataSelectionContext"
@@ -15,55 +14,44 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/componen
 function AppContent() {
   return (
     <div className="flex flex-col h-screen bg-background text-foreground">
-      {/* Top Toolbar */}
       <Toolbar />
 
-      {/* Main Content Area with Resizable Panels */}
       <ResizablePanelGroup direction="horizontal" className="flex-1 overflow-hidden">
-        {/* Left Sidebar - Selectors / File Tree */}
         <ResizablePanel defaultSize={15} minSize={10} maxSize={30}>
           <Sidebar />
         </ResizablePanel>
 
         <ResizableHandle withHandle />
 
-        {/* Center - Main Visualization Panels */}
         <ResizablePanel defaultSize={65} minSize={30}>
           <CenterPanels />
         </ResizablePanel>
 
         <ResizableHandle withHandle />
 
-        {/* Right Sidebar - Inspector */}
         <ResizablePanel defaultSize={20} minSize={10} maxSize={30}>
           <Inspector />
         </ResizablePanel>
       </ResizablePanelGroup>
 
-      {/* Bottom Timeline / Playback Controls */}
       <Timeline />
-
-      {/* Toast Notifications */}
       <ToastContainer />
     </div>
   )
 }
 
 export default function App() {
-  // Initialize dark mode
   useDarkMode()
 
   return (
-    <AppProvider>
-      <ParquetWasmProvider>
-        <FileSystemProvider>
-          <DataSelectionProvider>
-            <PlaybackProvider>
-              <AppContent />
-            </PlaybackProvider>
-          </DataSelectionProvider>
-        </FileSystemProvider>
-      </ParquetWasmProvider>
-    </AppProvider>
+    <ParquetWasmProvider>
+      <FileSystemProvider>
+        <DataSelectionProvider>
+          <PlaybackProvider>
+            <AppContent />
+          </PlaybackProvider>
+        </DataSelectionProvider>
+      </FileSystemProvider>
+    </ParquetWasmProvider>
   )
 }

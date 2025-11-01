@@ -1,63 +1,32 @@
 import { createContext, useContext, useState, useCallback } from 'react'
 import type { ReactNode } from 'react'
+import type { Schema, Field } from 'apache-arrow'
 import { useParquetWasm } from './ParquetWasmContext'
 import { useFileSystem } from './FileSystemContext'
-import type { Schema, Field } from 'apache-arrow'
+import type {
+  SelectionType,
+  FileSelection,
+  ColumnSelection,
+  SelectedColumn,
+  MultiColumnSelection,
+  AxisMapping,
+  ParquetFileMetadata,
+  ParquetColumnMetadata,
+  Selection
+} from '@/types'
 
-export type SelectionType = 'file' | 'column' | 'columns' | null
-
-export interface FileSelection {
-  type: 'file'
-  filePath: string
-  fileName: string
-  schema?: Schema
-  metadata?: ParquetFileMetadata
+// Re-export types for backward compatibility
+export type {
+  SelectionType,
+  FileSelection,
+  ColumnSelection,
+  SelectedColumn,
+  MultiColumnSelection,
+  AxisMapping,
+  ParquetFileMetadata,
+  ParquetColumnMetadata,
+  Selection
 }
-
-export interface ColumnSelection {
-  type: 'column'
-  filePath: string
-  columnName: string
-  columnType: string
-  field?: Field
-  fileMetadata?: ParquetFileMetadata
-}
-
-export interface SelectedColumn {
-  filePath: string
-  columnName: string
-  columnType: string
-  field?: Field
-  visible: boolean // For toggling in plot
-}
-
-export interface MultiColumnSelection {
-  type: 'columns'
-  columns: SelectedColumn[]
-  fileMetadata?: ParquetFileMetadata
-  axisMapping?: AxisMapping // For 3D visualization
-}
-
-export interface AxisMapping {
-  x: string | null // Column name for X axis
-  y: string | null // Column name for Y axis
-  z: string | null // Column name for Z axis
-  scale: number // Scale multiplier for visualization (default 1)
-}
-
-export interface ParquetFileMetadata {
-  path: string
-  name: string
-  numRows?: number
-  numColumns?: number
-  fileSize?: number
-  createdBy?: string
-  version?: string
-  schema?: Schema
-  rawMetadata?: Record<string, any>
-}
-
-export type Selection = FileSelection | ColumnSelection | MultiColumnSelection | null
 
 interface DataSelectionContextValue {
   selection: Selection
@@ -121,6 +90,14 @@ export function DataSelectionProvider({ children }: { children: ReactNode }) {
         const table = await readTable(uint8Array)
 
         // Extract metadata
+        const columns: ParquetColumnMetadata[] = schema.fields.map((field) => ({
+          name: field.name,
+          type: field.type.toString(),
+          field: field,
+          nullable: field.nullable,
+          metadata: field.metadata,
+        }))
+
         const metadata: ParquetFileMetadata = {
           path: filePath,
           name: fileItem.name,
@@ -128,11 +105,12 @@ export function DataSelectionProvider({ children }: { children: ReactNode }) {
           numColumns: table.numCols,
           fileSize: uint8Array.length,
           schema: schema,
+          columns: columns,
           rawMetadata: {
-            fields: schema.fields.map((field) => ({
-              name: field.name,
-              type: field.type.toString(),
-              nullable: field.nullable,
+            fields: columns.map(col => ({
+              name: col.name,
+              type: col.type,
+              nullable: col.nullable,
             })),
             schemaMetadata: schema.metadata,
           },

@@ -1,12 +1,9 @@
 import { createContext, useContext, useState, useCallback } from 'react'
 import type { ReactNode } from 'react'
+import type { FileSystemItem } from '@/types'
 
-export interface FileSystemItem {
-  path: string
-  name: string
-  isDirectory: boolean
-  handle: FileSystemFileHandle | FileSystemDirectoryHandle
-}
+// Re-export for backward compatibility
+export type { FileSystemItem }
 
 interface FileSystemContextValue {
   selectedFiles: FileSystemItem[]
