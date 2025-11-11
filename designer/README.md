@@ -1,148 +1,108 @@
-# Cursed Web
+# Drone Light Designer
 
-Frontend web application for the Cursed Stack Kettleman project, built with React, Vite, and Mantine UI.
+A node-based drone light show designer built with Next.js, React Flow, Three.js, and DockView.
 
 ## Features
 
-- Built with React and TypeScript
-- Vite for fast development and building
-- Mantine UI for beautiful, accessible components
-- Docker support for development and production
-- Integration with Cursed Server API
+- **Node-Based Editor**: Visual programming interface using React Flow
+- **3D Preview**: Real-time Three.js visualization of drone formations
+- **Panel-Based Layout**: Flexible workspace using DockView
+- **Dark Mode**: Full dark mode support
+- **Grid Generator**: Create 3D grids of drones with configurable dimensions
+- **Cluster Output**: Preview drone formations in 3D space
 
-## Development
+## Getting Started
 
 ### Prerequisites
 
-- [Proto](https://moonrepo.dev/proto) with Bun and Moon installed
-- Node.js 18+ (for some development tools)
-- Docker (for containerized builds)
+- Bun (latest version)
+- Node.js 18+ (for Next.js)
 
-### Getting Started
-
-1. Install dependencies:
-   ```bash
-   moon run :install
-   ```
-
-2. Start the development server:
-   ```bash
-   moon run cursed-web:dev
-   ```
-
-The application will be available at http://localhost:4150
-
-### Available Commands
-
-- `moon run cursed-web:dev` - Start the development server
-- `moon run cursed-web:build` - Build the production bundle
-- `moon run cursed-web:docker-build` - Build the Docker image
-- `moon run cursed-web:lint` - Run ESLint
-- `moon run cursed-web:test` - Run tests
-
-### Environment Variables
-
-Create a `.env` file in the cursed-web directory with the following variables:
-
-```env
-VITE_API_URL=http://localhost:4151
-```
-
-### Project Structure
-
-```
-cursed-web/
-├── src/
-│   ├── components/    # React components
-│   ├── pages/        # Page components
-│   ├── hooks/        # Custom React hooks
-│   ├── utils/        # Utility functions
-│   ├── types/        # TypeScript type definitions
-│   ├── styles/       # Global styles
-│   └── App.tsx       # Root component
-├── public/           # Static assets
-├── tests/            # Test files
-└── moon.yml         # Moon configuration
-```
-
-## Building for Production
-
-1. Build the production bundle:
-   ```bash
-   moon run cursed-web:build
-   ```
-
-2. Build the Docker image:
-   ```bash
-   moon run cursed-web:docker-build
-   ```
-
-## Development Guidelines
-
-### Code Style
-
-- Follow the ESLint configuration
-- Use TypeScript for type safety
-- Follow React best practices and hooks guidelines
-- Use Mantine UI components when possible
-
-### Component Structure
-
-```typescript
-// Example component structure
-import { FC } from 'react';
-import { Box } from '@mantine/core';
-
-interface MyComponentProps {
-  // Props interface
-}
-
-export const MyComponent: FC<MyComponentProps> = ({ /* props */ }) => {
-  return (
-    <Box>
-      {/* Component content */}
-    </Box>
-  );
-};
-```
-
-### State Management
-
-- Use React Context for global state
-- Use React Query for API state management
-- Keep component state minimal and focused
-
-## Testing
-
-Run the test suite:
+### Installation
 
 ```bash
-moon run cursed-web:test
+bun install
 ```
 
-## Troubleshooting
+### Development
 
-### Common Issues
+```bash
+bun run dev
+```
 
-1. **Development Server Issues**
-   - Clear the Vite cache
-   - Check if port 4150 is available
-   - Verify all dependencies are installed
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-2. **Build Issues**
-   - Ensure all environment variables are set
-   - Check for TypeScript errors
-   - Verify import paths
+### Building for Production
 
-3. **API Connection Issues**
-   - Verify the API server is running
-   - Check CORS configuration
-   - Validate API URL in environment variables
+```bash
+bun run build
+bun run start
+```
 
-## Contributing
+## Usage
 
-Please refer to the main project's README for contribution guidelines.
+1. **Creating Nodes**: Drag nodes from the Creation List panel onto the Graph View
+2. **Connecting Nodes**: Connect output handles (right side) to input handles (left side)
+3. **Editing Properties**: Select a node to edit its properties in the Inspector panel
+4. **Viewing Results**: The Preview panel shows the 3D visualization of your drone cluster
+
+### Node Types
+
+#### 3D Grid Generator
+Creates a 3D grid of drones with configurable:
+- Width (number of drones in X axis)
+- Height (number of drones in Y axis)
+- Depth (number of drones in Z axis)
+- Spacing (distance between drones)
+
+#### Cluster Output
+Terminal node that sends the cluster data to the 3D preview.
+
+## Technology Stack
+
+- **Next.js 16**: React framework with App Router
+- **React Flow**: Node-based editor
+- **Three.js + React Three Fiber**: 3D visualization
+- **DockView**: Panel-based layout system
+- **Zustand**: State management
+- **Tailwind CSS**: Styling
+- **Shadcn UI**: Component library
+- **TypeScript**: Type safety
+
+## Project Structure
+
+```
+designer/
+├── app/                    # Next.js app directory
+│   ├── layout.tsx         # Root layout
+│   ├── page.tsx           # Main page
+│   └── globals.css        # Global styles
+├── components/
+│   ├── layout/            # Layout components
+│   │   ├── TopToolbar.tsx
+│   │   └── DockviewLayout.tsx
+│   ├── nodes/             # Custom React Flow nodes
+│   │   ├── GridGeneratorNode.tsx
+│   │   └── ClusterOutputNode.tsx
+│   ├── panels/            # DockView panels
+│   │   ├── CreationList.tsx
+│   │   ├── GraphView.tsx
+│   │   ├── Inspector.tsx
+│   │   └── Preview.tsx
+│   └── ui/                # Shadcn UI components
+├── lib/
+│   ├── utils.ts           # Utility functions
+│   └── nodeExecution.ts   # Graph execution engine
+├── store/
+│   ├── flowStore.ts       # React Flow state
+│   └── previewStore.ts    # Preview state
+├── types/
+│   ├── drone.ts           # Drone type definitions
+│   └── nodes.ts           # Node type definitions
+└── hooks/
+    └── useDarkMode.ts     # Dark mode hook
+```
 
 ## License
 
-This project is licensed under the terms found in the LICENSE file at the root of the repository.
+MIT
